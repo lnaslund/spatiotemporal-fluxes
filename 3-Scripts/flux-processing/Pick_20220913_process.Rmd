@@ -1,0 +1,140 @@
+---
+title: "Pick_20220913_process"
+author: "L. Naslund"
+date: "2022-09-23"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits.secs = 10)
+
+library(tidyverse)
+library(lubridate)
+library(xts)
+library(dygraphs)
+library(plotly)
+library(shiny)
+library(gridExtra)
+```
+
+## Load functions and data
+
+The function `file.finder()` searches through a directory for data files between specified dates. The ABB analyzer saves data in a folder labeled with the sampling date. This function works if all of the output folders are saved in a single directory and retain their original date names. This function also works to find temperature data, if the data are saved in the ABB date folders with the "temp" in the file name.
+
+* *data.path:* the file path for the directory where the data are saved
+* *start:* start date for the files to be analyzed
+* *end:* end date for the files to be analyzed 
+* *type:* file type ("flux" or "temperature")
+
+The function `read.flux()` loads and formats flux data files listed in a vector containing the file paths for desired flux files, such as the output from `file.finder()`.
+
+* *flux_files:* vector containing the file paths for desired flux files
+* *time.zone:* time zone of date times in flux files (complete list available with `OlsonNames()`)
+
+```{r load functions & files}
+source("../functions/gas_functions_final.R")
+
+flux_files <- file.finder(data.path = "../../1-Raw Data/flux", start="2022-09-13", end= "2022-09-14", type="flux")
+temp_files <- file.finder(data.path = "../../1-Raw Data/flux", start="2022-09-13", end= "2022-09-14", type="temperature")
+
+data <- read.flux(flux_files, "America/New_York")
+
+times <-read.csv("../../1-Raw Data/flux/2022-09-13/Picks_20220913_times.csv") %>% filter(is.na(Start)==FALSE, is.na(End)==FALSE, Start!="", End!="") %>% mutate(Start= mdy_hms(paste(Date, Start, sep=" "), tz="America/New_York"), End= mdy_hms(paste(Date, End, sep= " "), tz="America/New_York")) 
+```
+
+## Quickly and interactively visualize the time series 
+
+Drag cursor to zoom in. Double click to zoom out
+
+```{r visualize raw timeseries}
+# ch4_ts <- as.xts(data$CH4_dry, order.by=data$date_time)
+# co2_ts <- as.xts(data$CO2_dry, order.by=data$date_time)
+# #
+# dygraph(ch4_ts, main="CH4") %>%
+#    dyOptions(useDataTimezone = TRUE)
+
+# dygraph(co2_ts) %>%
+#   dyOptions(useDataTimezone = TRUE)
+```
+
+## Visualize and calculate slopes
+
+(This description is out of date and descripes the old version of this function) The function `calc.slopes()` returns a list with the calculated slopes between the start and end times specified by the user in a data frame, excluding some percentage of the data at the beginning of the time series, which is specified by the user. Because the times recorded by the user may not correspond to timestamps recorded by the analyzer, this function calls `return.ts()` which returns the closest recorded timestamp in the flux data file to the user specified time stamp. The list also contains plots of the fluxes for the user to manually inspect which data points are included in the slope calculation. Users should note the number at the beginning of the plot titles for the calculations they are unsatisfied with, because these numbers correspond to the index of that flux in the list returned by `calc.slopes()` and can be used in the function `shiny_edit()` to interactively select the portion of the time series used to calculate the slope. `calc.slopes()` will return a row index for every time step in which either the start time or end time is missing or the end time is before the start time.
+
+* *data_df:* the data frame containing the output from the analyzer
+* *times_df:* the data frame containing the times specified by the user as the start and end time of the flux measurements
+* *time.zone:* time zone of recorded dates
+* *perc_cut:* what percentage of the observations to cut from the slope calculation to account for any initial equilibration within the analyzer
+
+```{r calculate slopes}
+# This function takes a while to run
+flux_list <- calc.slopes(data, times, "America/New_York", 10)
+
+#make pdfs of default plots
+pdf("../../1-Raw Data/flux/flux_plots/Pick_20220913_ch4_plots.pdf", paper="a4", width=9, height=12)
+marrangeGrob(grobs=compact(flux_list$ch4_plot), nrow=3, ncol=2)
+dev.off()
+# 
+pdf("../../1-Raw Data/flux/flux_plots/Pick_20220913_co2_plots.pdf", paper="a4", width=9, height=12)
+marrangeGrob(grobs=compact(flux_list$co2_plot), nrow=3, ncol=2)
+dev.off()
+```
+## Calculate fluxes 
+
+The function `read.temp()` loads and formats temperature data files listed in a vector containing the file paths for desired temperature files, such as the output from `file.finder()`. Note: if the slope for the flux was calculated from a subset of the data, this function does not subset the temperature time series
+
+* *temp_files:* vector containing the file paths for desired flux files
+* *time.zone:* time zone of date times in flux files (complete list available with `OlsonNames()`)
+
+The function `add.temps()` calculates the average temperature during each flux measurement specified by the user and appends them to the flux list. 
+
+ list containing the calculated slopes for each flux measurement, such as the output from `calc.slopes()`
+* *temp_data:* data frame containing formatted temperature data, such as the output from `read.temp()`
+* *perc_cut :* what percentage of the observations to cut from the slope calculation to account for any initial equilibration within the analyzer
+
+The function `calc_flux()` calculates gas flux from the calculated CH4 and CO2 slopes (e.g., the output of `calc.slopes()` edited by `shiny_edit()`), measured chamber temperature, chamber and accessory volumes using the ideal gas law. This function returns a data frame which can be exported using the write functions. 
+
+* *flux_list:* the list containing the flux data, slopes, and intercepts (e.g., the output from `calc.slopes()`)
+* *width:* chamber width in meters
+* *length:* chamber length in meters
+* *height:* chamber height in meters
+* *add_vol:* additional system volume (e.g., volume inside the analyzer and tubing) in cubic meters
+
+```{r flux calculation, warning=FALSE}
+# forgot to turn on temp logger in the analyzer until part of the way through 3rd sampling
+# take average of nearby times
+temp_data <- read.temp(temp_files, "America/New_York")
+
+# to quickly visualize the temperature data uncomment the following lines
+
+# temp_ts <- as.xts(temp_data$temp, order.by=temp_data$date_time)
+# dygraph(temp_ts, main="temp") %>% 
+#   dyOptions(useDataTimezone = TRUE)
+
+flux_list_corrected <- add_temps(flux_list, temp_data)
+
+fluxes <- calc_flux(flux_list_corrected, width=0.3429, length=0.3429, height=0.127, add_vol= 7.317433e-05)
+
+fluxes <- fluxes %>% mutate(temporary = hm(paste(hour(start_time), minute(start_time), sep = ":"))) %>% left_join(times %>% mutate(temporary = hm(paste(hour(Start), minute(Start), sep = ":"))) %>% rename(trip=Trip) %>% select(trip, temporary),by=c("temporary")) %>% select(-temporary)
+
+file_name <- "../../1-Raw Data/flux/processed-flux/Pick_20220913_Fluxes.csv"
+write.csv(fluxes, file_name , row.names = F)
+```
+
+```{r}
+# bev a line tubing
+# 1/8 in ID * 92.5 in per line * 2 lines = 3.720341e-05 m3
+(0.003175/2)^2 * pi * 2.3495 * 2
+ 
+# 1/8 in ID * 64.5 in of tubing = 1.297092e-05 m3
+(0.003175/2)^2 * pi * 1.6383
+
+# cavity volume = 2.3e-5 m3
+
+# add vol = 7.317433e-05
+3.720341e-05+1.297092e-05+2.3e-5
+
+0.3429*0.3429*0.127+7.317433e-05
+```

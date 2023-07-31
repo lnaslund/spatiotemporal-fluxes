@@ -1,0 +1,1059 @@
+# Diffusion estimates
+
+Deans 8/16/22 CO2 Estimate
+```{r Deans1 CO2}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(deans_pts_16$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- deans_pts_16 %>% filter(trip == periods[i])
+# 
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$flux_co2_g_hr, plot.it = F)$x
+# 
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_co2_g_hr)
+# 
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+# 
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# 
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_deans_20220816_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# dean_16_var_co2 <- vgm(psill = 1, "Sph", range = 18)
+# 
+# # make interpolation grid
+# dean_grid <- st_as_stars(st_bbox(deans), dx = 1, dy = 1)
+# dean_grid <- dean_grid[deans]
+# 
+# deans_16_co2_results <- NULL
+# deans_16_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), dean_grid, model = dean_16_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+# 
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- data.frame(site = "Deans", date = "2022-08-16", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Deans", date = "2022-08-16", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   deans_16_co2_results <- bind_rows(deans_16_co2_results, temp_df)
+#   deans_16_co2_results_summarized <- bind_rows(deans_16_co2_results_summarized, temp_df_sum)
+# 
+# }
+# 
+# write.csv(deans_16_co2_results_summarized, "../5-Results/1-kriged-estimates/deans_16_co2_results_summarized.csv", row.names = F)
+```
+
+Deans 8/16/22 CH4 Estimate
+```{r Deans 1 CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(deans_pts_16$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- deans_pts_16 %>% filter(trip == periods[i])
+# 
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+# 
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+# 
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+# 
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# 
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_deans_20220816_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# deans_16_var_ch4 <- vgm(psill = 1, "Sph", range = 20)
+# 
+# # make interpolation grid
+# dean_grid <- st_as_stars(st_bbox(deans), dx = 1, dy = 1)
+# dean_grid <- dean_grid[deans]
+# 
+# deans_16_ch4_results <- NULL
+# deans_16_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), dean_grid, model = deans_16_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+# 
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- data.frame(site = "Deans", date = "2022-08-16", period = i, gas = "CH4", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Deans", date = "2022-08-16", period = i, gas = "CH4", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   deans_16_ch4_results <- bind_rows(deans_16_ch4_results, temp_df)
+#   deans_16_ch4_results_summarized <- bind_rows(deans_16_ch4_results_summarized, temp_df_sum)
+# 
+# }
+# 
+# write.csv(deans_16_ch4_results_summarized, "../5-Results/1-kriged-estimates/deans_16_ch4_results_summarized.csv", row.names = F)
+```
+
+Deans 8/30/22 CO2 Estimate
+```{r Deans2 CO2}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(deans_pts_30$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- deans_pts_30 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$flux_co2_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_co2_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_deans_20220830_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# dean_30_var_co2 <- vgm(psill = 1, "Sph", range = 18) 
+# 
+# # make interpolation grid
+# dean_grid <- st_as_stars(st_bbox(deans), dx = 1, dy = 1)
+# dean_grid <- dean_grid[deans]
+# 
+# deans_30_co2_results <- NULL
+# deans_30_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), dean_grid, model = dean_30_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Deans", date = "2022-08-30", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Deans", date = "2022-08-30", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   deans_30_co2_results <- bind_rows(deans_30_co2_results, temp_df)
+#   deans_30_co2_results_summarized <- bind_rows(deans_30_co2_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(deans_30_co2_results_summarized, "../5-Results/1-kriged-estimates/deans_30_co2_results_summarized.csv", row.names = F)
+```
+
+Deans 8/30/22 CH4 Estimate
+```{r Deans2 CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(deans_pts_30$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- deans_pts_30 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_deans_20220830_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# dean_30_var_ch4 <- vgm(psill = 1, "Sph", range = 20) 
+# 
+# # make interpolation grid
+# dean_grid <- st_as_stars(st_bbox(deans), dx = 1, dy = 1)
+# dean_grid <- dean_grid[deans]
+# 
+# deans_30_ch4_results <- NULL
+# deans_30_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), dean_grid, model = dean_30_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Deans", date = "2022-08-30", period = i, sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Deans", date = "2022-08-30", period = i, flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   deans_30_ch4_results <- bind_rows(deans_30_ch4_results, temp_df)
+#   deans_30_ch4_results_summarized <- bind_rows(deans_30_ch4_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(deans_30_ch4_results_summarized, "../5-Results/1-kriged-estimates/deans_30_ch4_results_summarized.csv", row.names = F)
+```
+
+Catfish 9/6/22 CO2 Estimate
+```{r Catfish1 CO2}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(catfish_pts_06$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- catfish_pts_06 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$flux_co2_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_co2_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_catfish_20220906_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# catfish_06_var_co2 <- vgm(psill = 1, "Sph", range = 12) 
+# 
+# # make interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_06_co2_results <- NULL
+# catfish_06_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), catfish_grid, model = catfish_06_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Catfish", date = "2022-09-06", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Catfish", date = "2022-09-06", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   catfish_06_co2_results <- bind_rows(catfish_06_co2_results, temp_df)
+#   catfish_06_co2_results_summarized <- bind_rows(catfish_06_co2_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(catfish_06_co2_results_summarized, "../5-Results/1-kriged-estimates/catfish_06_co2_results_summarized.csv", row.names = F)
+```
+
+Catfish 9/6/22 CH4 Estimate
+```{r Catfish1 CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(catfish_pts_06$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- catfish_pts_06 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_catfish_20220906_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# catfish_06_var_ch4 <- vgm(psill = 1, "Sph", range = 12) 
+# 
+# # make interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_06_ch4_results <- NULL
+# catfish_06_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), catfish_grid, model = catfish_06_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Catfish", date = "2022-09-06", period = i, gas = "CH4", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Catfish", date = "2022-09-06", period = i, gas = "CH4", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   catfish_06_ch4_results <- bind_rows(catfish_06_ch4_results, temp_df)
+#   catfish_06_ch4_results_summarized <- bind_rows(catfish_06_ch4_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(catfish_06_ch4_results_summarized, "../5-Results/1-kriged-estimates/catfish_06_ch4_results_summarized.csv", row.names = F)
+```
+
+Catfish 9/18/22 CO2 Estimate
+```{r Catfish2 CO2}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(catfish_pts_18$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- catfish_pts_18 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$flux_co2_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_co2_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_catfish_20220918_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# catfish_18_var_co2 <- vgm(psill = 1, "Sph", range = 14) 
+# 
+# # make interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_18_co2_results <- NULL
+# catfish_18_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), catfish_grid, model = catfish_18_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Catfish", date = "2022-09-18", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Catfish", date = "2022-09-18", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   catfish_18_co2_results <- bind_rows(catfish_18_co2_results, temp_df)
+#   catfish_18_co2_results_summarized <- bind_rows(catfish_18_co2_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(catfish_18_co2_results_summarized, "../5-Results/1-kriged-estimates/catfish_18_co2_results_summarized.csv", row.names = F)
+```
+
+Catfish 9/18/22 CH4 Estimate
+```{r Catfish2 CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(catfish_pts_18$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- catfish_pts_18 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_catfish_202209018_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# catfish_18_var_ch4 <- vgm(psill = 1, "Sph", range = 10) 
+# 
+# # make interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_18_ch4_results <- NULL
+# catfish_18_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), catfish_grid, model = catfish_18_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Catfish", date = "2022-09-18", period = i, gas = "CH4", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Catfish", date = "2022-09-18", period = i, gas = "CH4", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   catfish_18_ch4_results <- bind_rows(catfish_18_ch4_results, temp_df)
+#   catfish_18_ch4_results_summarized <- bind_rows(catfish_18_ch4_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(catfish_18_ch4_results_summarized, "../5-Results/1-kriged-estimates/catfish_18_ch4_results_summarized.csv", row.names = F)
+```
+
+Sister3 8/22/22 CO2 Estimate
+```{r Sister3 CO2}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(sister3_pts_22$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- sister3_pts_22 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$flux_co2_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_co2_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_sister3_20220822_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# sister3_22_var_co2 <- vgm(psill = 1, "Sph", range = 7) 
+# 
+# # make interpolation grid
+# sister3_grid <- st_as_stars(st_bbox(sister3), dx = 1, dy = 1)
+# sister3_grid <- sister3_grid[sister3]
+# 
+# sister3_22_co2_results <- NULL
+# sister3_22_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), sister3_grid, model = sister3_22_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Sister3", date = "2022-08-22", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Sister3", date = "2022-08-22", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   sister3_22_co2_results <- bind_rows(sister3_22_co2_results, temp_df)
+#   sister3_22_co2_results_summarized <- bind_rows(sister3_22_co2_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(sister3_22_co2_results_summarized, "../5-Results/1-kriged-estimates/sister3_22_co2_results_summarized.csv", row.names = F)
+```
+
+Sister3 8/22/22 CH4 Estimate
+```{r Sister3 CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(sister3_pts_22$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- sister3_pts_22 %>% filter(trip == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_sister3_20220822_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# sister3_22_var_ch4 <- vgm(psill = 1, "Sph", range = 5) 
+# 
+# # make interpolation grid
+# sister3_grid <- st_as_stars(st_bbox(sister3), dx = 1, dy = 1)
+# sister3_grid <- sister3_grid[sister3]
+# 
+# 
+# sister3_22_ch4_results <- NULL
+# sister3_22_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+#   
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), sister3_grid, model = sister3_22_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- data.frame(site = "Sister3", date = "2022-08-22", period = i, gas = "CH4", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Sister3", date = "2022-08-22", period = i, gas = "CH4", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   sister3_22_ch4_results <- bind_rows(sister3_22_ch4_results, temp_df)
+#   sister3_22_ch4_results_summarized <- bind_rows(sister3_22_ch4_results_summarized, temp_df_sum)
+#   
+# }
+# 
+# write.csv(sister3_22_ch4_results_summarized, "../5-Results/1-kriged-estimates/sister3_22_ch4_results_summarized.csv", row.names = F)
+```
+
+Pick 9/13/22 CO2 Estimate
+```{r Pick CO2}
+# # modeling with a trend
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(pick_pts_13$trip)
+# var.lst <- list()
+# func_trend <- as.formula(flux_co2_g_hr ~ x + y)
+# 
+# pick_pts_13$x <- st_coordinates(pick_pts_13) %>% as.data.frame() %>% pull(X)
+# pick_pts_13$y <- st_coordinates(pick_pts_13) %>% as.data.frame() %>% pull(Y)
+# 
+# for(i in 1:length(periods)){
+# 
+#   var.lst$data[[i]] <- pick_pts_13 %>% filter(trip == periods[i])
+#   var.lst$lm[[i]] <- lm(func_trend, data = var.lst$data[[i]])
+#   
+#   var.lst$data[[i]]$resid_co2_g_hr <- residuals(var.lst$lm[[i]])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_co2_g_hr <- qqnorm(var.lst$data[[i]]$resid_co2_g_hr, plot.it = F)$x
+# 
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$resid_co2_g_hr)
+# 
+#   var.lst$var_df[[i]] <- variogram(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), cloud = T)
+# 
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# 
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_pick_20220913_co2.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# pick_13_var_co2 <- vgm(psill = 1, "Sph", range = 20)
+# 
+# # make interpolation grid
+# pick_grid <- st_as_stars(st_bbox(pick), dx = 1, dy = 1)
+# pick_grid <- pick_grid[pick]
+# 
+# pick_13_co2_results <- NULL
+# pick_13_co2_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_co2_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_co2_g_hr) == F), pick_grid, model = pick_13_var_co2, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+# 
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+# var.lst$kriged[[i]]$trend <- predict(var.lst$kriged[[i]][2], var.lst$lm[[i]])
+# 
+# var.lst$kriged[[i]]$detrended <- var.lst$kriged[[i]]$trend + var.lst$kriged[[i]]$backtransformed
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][4,,,f]$detrended, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- data.frame(site = "Pick", date = "2022-09-13", period = i, gas = "CO2", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Pick", date = "2022-09-13", period = i, gas = "CO2", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   pick_13_co2_results <- bind_rows(pick_13_co2_results, temp_df)
+#   pick_13_co2_results_summarized <- bind_rows(pick_13_co2_results_summarized, temp_df_sum)
+# 
+# }
+# 
+# write.csv(pick_13_co2_results_summarized, "../5-Results/1-kriged-estimates/pick_13_co2_results_summarized.csv", row.names = F)
+```
+
+Pick 9/13/22 CH4 Estimate
+```{r Pick CH4}
+# sim_num <- 500
+# n_num <- 500
+# 
+# periods <- unique(pick_pts_13$trip)
+# var.lst <- list()
+# 
+# for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- pick_pts_13 %>% filter(trip == periods[i])
+# 
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_ch4_g_hr <- qqnorm(var.lst$data[[i]]$flux_ch4_g_hr, plot.it = F)$x
+# 
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$flux_ch4_g_hr)
+# 
+#   var.lst$var_df[[i]] <- variogram(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), cloud = T)
+# 
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# 
+# }
+# 
+# # make a pdf of all of the experimental variograms
+# pdf("../5-Results/1-kriged-estimates/variograms_pick_20220913_ch4.pdf", paper="a4", width=9, height=12)
+# marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# dev.off()
+# 
+# 
+# # define theoretical variogram
+# pick_13_var_ch4 <- vgm(psill = 1, "Sph", range = 20)
+# 
+# # make interpolation grid
+# pick_grid <- st_as_stars(st_bbox(pick), dx = 1, dy = 1)
+# pick_grid <- pick_grid[pick]
+# 
+# pick_13_ch4_results <- NULL
+# pick_13_ch4_results_summarized <- NULL
+# 
+# for(i in 1:length(periods)){
+# 
+#   #change nsim and nmax for runs
+# var.lst$kriged[[i]] <- krige(norm_ch4_g_hr~1, var.lst$data[[i]] %>% filter(is.na(norm_ch4_g_hr) == F), pick_grid, model = pick_13_var_ch4, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+# 
+# }
+# 
+# var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- data.frame(site = "Pick", date = "2022-09-13", period = i, gas = "CH4", sum_flux = sim_vec)
+#   temp_df_sum <- data.frame(site = "Pick", date = "2022-09-13", period = i, gas = "CH4", flux_2.5 = as.numeric(quantile(sim_vec, 0.025)), flux_97.5 = as.numeric(quantile(sim_vec, 0.975)), mean_flux = mean(sim_vec))
+#   pick_13_ch4_results <- bind_rows(pick_13_ch4_results, temp_df)
+#   pick_13_ch4_results_summarized <- bind_rows(pick_13_ch4_results_summarized, temp_df_sum)
+# 
+# }
+# 
+# write.csv(pick_13_ch4_results_summarized, "../5-Results/1-kriged-estimates/pick_13_ch4_results_summarized.csv", row.names = F)
+```

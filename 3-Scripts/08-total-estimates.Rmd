@@ -1,0 +1,132 @@
+# Total flux estimates
+
+```{r total estimates set up, include=FALSE}
+all_fluxes_pathways <- date_from_sampling(read.csv("../5-Results/1-kriged-estimates/all_fluxes_pathways.csv") %>% select(-X)%>% mutate(site = str_sub(sampling, 1, -2)))
+
+all_fluxes_periods <- read.csv("../5-Results/1-kriged-estimates/all_fluxes_periods.csv")%>% 
+  select(-X) %>% 
+  mutate(flux_mean_g_m2_hr = mean_flux_g_hr/area, 
+         flux_2.5_g_m2_hr = flux_2.5_g_hr/area, 
+         flux_97.5_g_m2_hr = flux_97.5_g_hr/area)
+```
+
+```{r co2 eq table, echo = F}
+co2_eq_summary <- all_fluxes_pathways %>% 
+  mutate(flux_mean_g_m2_day_co2_eq =  flux_mean_g_day_co2_eq/area,
+         flux_2.5_g_m2_day_co2_eq= flux_2.5_g_day_co2_eq/area, 
+         flux_97.5_g_m2_day_co2_eq= flux_97.5_g_day_co2_eq/area)%>% 
+  select(site, date, pathway, gas, flux_mean_g_m2_day_co2_eq) %>% 
+  pivot_wider(id_cols = c("site", "date"), names_from = c("pathway", "gas"), values_from = "flux_mean_g_m2_day_co2_eq") %>% 
+  mutate(total_co2_eq = diffusion_CH4 + diffusion_CO2 + ebullition_CH4, prop_ch4_diff = (diffusion_CH4/total_co2_eq)*100, prop_ch4_eb = (ebullition_CH4/total_co2_eq)*100, prop_co2 = (diffusion_CO2/total_co2_eq)*100, prop_ch4 = prop_ch4_diff + prop_ch4_eb, without_eb = (ebullition_CH4/total_co2_eq)) 
+```
+
+```{r green vs not, include = F}
+green_comp <- all_fluxes_pathways %>% 
+  group_by(sampling, site, date) %>% 
+  mutate(flux_mean_g_m2_day_co2_eq =  flux_mean_g_day_co2_eq/area) %>%  
+  summarize(co2_eq_g_m2_day = sum(flux_mean_g_m2_day_co2_eq)) %>% 
+  select(site, date, co2_eq_g_m2_day) %>% 
+  mutate(green = if_else(site == "Pick", "green", "not green")) %>% 
+  ungroup() %>% 
+  group_by(green) %>% 
+  summarize(co2_eq_g_m2_day_mean = mean(co2_eq_g_m2_day))
+
+clarke_ponds <- st_read("../2-Clean Data/clarke_ponds.shp") %>% filter(AreSqKm < 0.1)
+clarke_area <- sum(clarke_ponds$AreSqKm)
+
+green_avg <- green_comp$co2_eq_g_m2_day_mean[1]
+not_green_avg <- green_comp$co2_eq_g_m2_day_mean[2]
+```
+
+## Diel Diffusive CH4 
+```{r diel ch4 rate, echo = F}
+ch4_diel <- add_sampling_period(all_fluxes_periods %>% 
+  filter(!(sampling == "Deans1" & period == 8)) %>% 
+  filter(gas == "CH4", pathway == "diffusion")) %>% 
+  ggplot(aes(period, flux_mean_g_m2_hr))+
+  geom_point()+
+  geom_errorbar(aes(ymin = flux_2.5_g_m2_hr, ymax = flux_97.5_g_m2_hr))+
+  geom_line()+
+  facet_wrap(~sampling)+
+  scale_x_discrete(limits = factor(c(1,2,3,4,5,6,7,8)), labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00"))+
+  theme_bw()+
+  ylab(expression(Diffusive ~ Flux ~ (g~CH[4]~m^-2~hr^-1)))+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size=14, color = "black"), 
+        axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.title.y = element_text(size=16, color = "black"), 
+        strip.text = element_text(size=14, color = "black"))
+```
+
+## Diel Diffusive CO2 
+```{r diel co2 rate, echo = F}
+co2_diel <- add_sampling_period(all_fluxes_periods %>% 
+  filter(gas == "CO2", pathway == "diffusion") %>% 
+  filter(!(sampling == "Deans1" & period == 8))) %>% 
+  ggplot(aes(period, flux_mean_g_m2_hr))+
+  geom_point()+
+  geom_errorbar(aes(ymin = flux_2.5_g_m2_hr, ymax = flux_97.5_g_m2_hr))+
+  geom_line()+
+  facet_wrap(~sampling)+
+  scale_x_discrete(limits = factor(c(1,2,3,4,5,6,7,8)), labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00"))+
+  theme_bw()+
+  ylab(expression(Diffusive ~ Flux ~ (g~CO[2]~m^-2~hr^-1)))+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size=14, color = "black"), 
+        axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.title.y = element_text(size=16, color = "black"), 
+        strip.text = element_text(size=14, color = "black"))
+```
+
+Diel CO2 diffusion no Blue Herron
+```{r diel co2 no bh}
+co2_diel_no_bh <- add_sampling_period(all_fluxes_periods %>% 
+  filter(gas == "CO2", pathway == "diffusion", site != "Pick") %>% 
+  filter(!(sampling == "Deans1" & period == 8))) %>% 
+  ggplot(aes(period, flux_mean_g_m2_hr))+
+  geom_point()+
+  geom_errorbar(aes(ymin = flux_2.5_g_m2_hr, ymax = flux_97.5_g_m2_hr))+
+  geom_line()+
+  facet_wrap(~sampling)+
+  scale_x_discrete(limits = factor(c(1,2,3,4,5,6,7,8)), labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00"))+
+  theme_bw()+
+  ylab(expression(Diffusive ~ Flux ~ (g~CO[2]~m^-2~hr^-1)))+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size=14, color = "black"), 
+        axis.text.x = element_text(angle = 60, hjust = 1), 
+        axis.title.y = element_text(size=16, color = "black"), 
+        strip.text = element_text(size=14, color = "black"))
+```
+
+## Diel ebullition
+```{r diel eb rate, echo = F}
+eb_diel <- all_fluxes_periods %>% 
+    filter(gas == "CH4", pathway == "ebullition", period != "8~9") %>% 
+   mutate(trip = case_when(period == "0~1" ~ 1,
+                             period == "1~2" ~ 2, 
+                             period == "2~3" ~ 3, 
+                             period == "3~4" ~ 4, 
+                             period == "4~5" ~ 5, 
+                             period == "5~6" ~ 6, 
+                             period == "6~7" ~ 7, 
+                             period == "7~8" ~ 8)) %>% 
+  mutate(sampling = case_when(sampling == "Catfish1" ~"Catfish 06-07 Sept",
+                              sampling == "Catfish2" ~ "Catfish 18-19 Sept",
+                              sampling == "Deans1" ~ "Deans 16-17 Aug",
+                              sampling == "Deans2" ~ "Deans 30-31 Aug", 
+                              sampling == "Pick1" ~ "Blue Herron 13-14 Sept",
+                              sampling == "Sister31" ~ "Sister 22-23 Aug")) %>% 
+  ggplot(aes(trip, flux_mean_g_m2_hr))+
+  geom_point()+
+  geom_errorbar(aes(ymin = flux_2.5_g_m2_hr, ymax = flux_97.5_g_m2_hr))+
+  geom_line()+
+  facet_wrap(~sampling)+
+  scale_x_discrete(limits = factor(c(1,2,3,4,5,6,7,8)), labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00"))+
+  theme_bw()+
+  ylab(expression(Ebullitive ~ Flux ~ (g~CH[4]~m^-2~hr^-1)))+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size=14, color = "black"), 
+        axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.title.y = element_text(size=16, color = "black"), 
+        strip.text = element_text(size=14, color = "black"))
+```

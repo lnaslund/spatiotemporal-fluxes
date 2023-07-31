@@ -1,0 +1,157 @@
+# Sunny Cloudy Analysis
+
+```{r sun cloud setup, include=FALSE}
+suncloud <- read.csv("../2-Clean Data/diffusive-fluxes.csv") %>% 
+  mutate(start_time = ymd_hms(start_time, tz = "America/New_York"), 
+         flux_ch4_g_hr = flux_ch4_g/24, 
+         flux_co2_g_hr = flux_co2_g/24) %>% 
+  mutate(date = date(start_time)) %>% 
+  filter(date %in% c(ymd("2022-06-20", "2022-06-21", "2022-07-12", "2022-07-13"))) %>% 
+  rename("trap.number" = "location")
+
+# some of these observations should fail to parse
+wolffia <- read.csv("../2-Clean Data/wolffia.csv") %>% 
+  rename("site" ="Location") %>% 
+  mutate(start_time = mdy_hms(paste(date, diffusive.start, sep = " "), tz = "America/New_York")) %>% 
+  filter(is.na(start_time)==FALSE) %>% 
+  select(-start_time) %>% 
+  mutate(date = mdy(date))
+
+suncloud <- suncloud %>% 
+  full_join(wolffia, by = c("date", "trap.number", "trip")) %>% 
+  mutate(time = as_hms(start_time)) %>% 
+  mutate(sampling = case_when(
+    (date == ymd("2022-06-21") | date == ymd("2022-06-20")) ~ "Sunny\n6/20 - 6/21",
+    (date == ymd("2022-07-12") | date == ymd("2022-07-13")) ~ "Cloudy\n7/12 - 7/13",
+  ) %>% as.factor()) %>% 
+  mutate(time.num = as.numeric(time), time.num.sq = time.num^2) 
+```
+
+```{r sunny cloudy model and plots}
+suncloud.mod.ch4 <- lm(flux_ch4_g_hr ~ time.num + wolffia + sampling, data = suncloud)
+
+suncloud.mod.co2 <- lm(flux_co2_g_hr ~ time.num + time.num.sq + wolffia + sampling, data = suncloud)
+
+sc_ch4 <- ggplot(suncloud, aes(time %>% as.POSIXct(), flux_ch4_g_hr)) + 
+  geom_point(aes(color = sampling,shape = wolffia), size =3, stroke = 1)+
+  scale_shape_manual(values = c(21, 24), labels = c(expression(No~italic(Wolffia)), expression(italic(Wolffia))))+
+  scale_color_manual(values = c("#595864", "#DCAE27"))+
+  theme_bw()+
+  ylab(expression(Diffusive ~ CH[4]~ flux ~ (g~m^-2~hr^-1)))+
+  theme(legend.text.align = 0, legend.title = element_blank(), axis.text = element_text(size = 16, color = "black"), axis.title = element_text(size = 18, color = "black"), legend.text = element_text(size = 16), axis.title.x = element_blank())+
+  scale_x_datetime(date_labels = "%H:%M")
+
+sc_co2 <- ggplot(suncloud, aes(time %>% as.POSIXct(), flux_co2_g_hr)) + 
+  geom_point(aes(color = sampling,shape = wolffia), size =3, stroke = 1)+
+  scale_shape_manual(values = c(21, 24), labels = c(expression(No~italic(Wolffia)), expression(italic(Wolffia))))+
+  scale_color_manual(values = c("#595864", "#DCAE27"))+
+  theme_bw()+
+  ylab(expression(Diffusive ~ CO[2]~ flux ~ (g~m^-2~hr^-1)))+
+  theme(legend.text.align = 0, legend.title = element_blank(), axis.text = element_text(size = 16, color = "black"), axis.title = element_text(size = 18, color = "black"), legend.text = element_text(size = 16), axis.title.x = element_blank())+
+  scale_x_datetime(date_labels = "%H:%M")
+
+sc_legend <- get_legend(sc_co2)
+```
+
+```{r pick 6.20 ch4 moran}
+pick_20 <- suncloud %>% 
+  filter(date(start_time)==mdy("06-20-2022") |  date(start_time)==mdy("06-21-2022")) %>% rename("location" = "trap.number") 
+
+pick_pts_20 <- pick_pts %>% 
+  full_join(pick_20, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+trips <- unique(pick_pts_20$trip)
+pick_20_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- pick_pts_20 %>% filter(trip == trips[i]) %>% pull(flux_ch4_g_hr)
+  pick_20_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_20 %>% filter(trip == trips[i])))[,1], (st_coordinates(pick_pts_20 %>% filter(trip == trips[i])))[,2])))
+  pick_20_dist_inv <- 1/pick_20_dist
+  diag(pick_20_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, pick_20_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  pick_20_moran_ch4 <- pick_20_moran_ch4 %>% bind_rows(temp_row)
+}
+
+pick_20_moran_ch4 <- pick_20_moran_ch4 %>% filter(trip != 3)
+```
+
+```{r pick 6.20 co2 moran}
+pick_20_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- pick_pts_20 %>% filter(trip == trips[i]) %>% pull(flux_co2_g_hr)
+  pick_20_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_20 %>% filter(trip == trips[i])))[,1], (st_coordinates(pick_pts_20 %>% filter(trip == trips[i])))[,2])))
+  pick_20_dist_inv <- 1/pick_20_dist
+  diag(pick_20_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, pick_20_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  pick_20_moran_co2 <- pick_20_moran_co2 %>% bind_rows(temp_row)
+}
+
+pick_20_moran_co2 <- pick_20_moran_co2 %>% filter(trip != 3)
+```
+
+```{r pick 7.12 ch4 moran}
+pick_12 <- suncloud %>% 
+  filter(date(start_time)==mdy("07-12-2022") |  date(start_time)==mdy("07-13-2022")) %>% rename("location" = "trap.number") 
+
+pick_pts_12 <- pick_pts %>% 
+  full_join(pick_12, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+trips <- unique(pick_pts_12$trip)
+pick_12_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- pick_pts_12 %>% filter(trip == trips[i]) %>% pull(flux_ch4_g_hr)
+  pick_12_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_12 %>% filter(trip == trips[i])))[,1], (st_coordinates(pick_pts_12 %>% filter(trip == trips[i])))[,2])))
+  pick_12_dist_inv <- 1/pick_12_dist
+  diag(pick_12_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, pick_12_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  pick_12_moran_ch4 <- pick_12_moran_ch4 %>% bind_rows(temp_row)
+}
+```
+
+```{r pick 7.12 co2 moran}
+pick_12 <- suncloud %>% 
+  filter(date(start_time)==mdy("07-12-2022") |  date(start_time)==mdy("07-13-2022")) %>% rename("location" = "trap.number") 
+
+pick_pts_12 <- pick_pts %>% 
+  full_join(pick_12, by = "location") %>% 
+  filter(is.na(flux_co2_mmol)==F)
+
+trips <- unique(pick_pts_12$trip)
+pick_12_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- pick_pts_12 %>% filter(trip == trips[i]) %>% pull(flux_co2_g_hr)
+  pick_12_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_12 %>% filter(trip == trips[i])))[,1], (st_coordinates(pick_pts_12 %>% filter(trip == trips[i])))[,2])))
+  pick_12_dist_inv <- 1/pick_12_dist
+  diag(pick_12_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, pick_12_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  pick_12_moran_co2 <- pick_12_moran_co2 %>% bind_rows(temp_row)
+}
+```
+
+```{r morans 6.20 and 7.12}
+broken_morans <- pick_20_moran_ch4 %>% 
+  mutate(uniqueid = "Blue Herron 20-21 June CH4") %>% 
+  mutate(trip = paste0(trip, "a") %>% as.factor()) %>% 
+  bind_rows(pick_12_moran_ch4 %>% 
+              mutate(uniqueid = "Blue Herron 12-13 July CH4", trip = as.factor(trip))) %>% 
+  bind_rows(pick_20_moran_co2 %>% mutate(uniqueid = "Blue Herron 20-21 June CO2", trip = paste0(trip, "a") %>% as.factor())) %>% 
+  bind_rows(pick_12_moran_co2 %>% mutate(uniqueid = "Blue Herron 12-13 July CO2", trip = as.factor(trip)))
+```
+

@@ -1,0 +1,398 @@
+# Diffusive emissions
+
+```{r diffusive visualization setup, echo = F, warning = F}
+# Read in diffusive flux data and convert estimates from g/m2/day to g/m2/hr
+diffusion <- read.csv("../2-Clean Data/diffusive-fluxes.csv") %>% 
+  mutate(start_time = ymd_hms(start_time, tz = "America/New_York"), 
+         flux_ch4_g_hr = flux_ch4_g/24, 
+         flux_co2_g_hr = flux_co2_g/24) %>% 
+  mutate(trip_wr =factor(case_when(trip == 1 ~ "10:00", 
+                             trip == 2 ~ "13:00", 
+                             trip == 3 ~ "16:00", 
+                             trip == 4 ~ "19:00", 
+                             trip == 5 ~ "22:00", 
+                             trip == 6 ~ "01:00", 
+                             trip == 7 ~ "04:00", 
+                             trip == 8 ~ "07:00"), levels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00"))) %>% 
+  mutate(date = date(start_time)) %>% 
+  mutate(location = if_else(site == "Sisters3", paste0("S", str_sub(location, 2, 3)), location))
+
+
+# Subset data from each sampling date and then create sf object with estimates
+deans_16 <- diffusion %>% 
+  filter(site == "Deans", date(start_time)==mdy("08-16-2022") |  date(start_time)==mdy("08-17-2022")) 
+
+deans_pts_16 <- deans_pts %>% 
+  full_join(deans_16, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+deans_30 <- diffusion %>% 
+  filter(site == "Deans", date(start_time)==mdy("08-30-2022") |  date(start_time)==mdy("08-31-2022")) 
+
+deans_pts_30 <- deans_pts %>% 
+  full_join(deans_30, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+catfish_06 <- diffusion %>% 
+  filter(site == "Catfish", date(start_time)==mdy("09-06-2022") |  date(start_time)==mdy("09-07-2022")) 
+
+catfish_pts_06 <- catfish_pts %>% 
+  full_join(catfish_06, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+catfish_18 <- diffusion %>% 
+  filter(site == "Catfish", date(start_time)==mdy("09-18-2022") |  date(start_time)==mdy("09-19-2022")) 
+
+catfish_pts_18 <- catfish_pts %>% 
+  full_join(catfish_18, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+pick_13 <- diffusion %>% 
+  filter(site == "Picks", date(start_time)==mdy("09-13-2022") |  date(start_time)==mdy("09-14-2022")) 
+
+pick_pts_13 <- pick_pts %>% 
+  full_join(pick_13, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+
+sister3_22 <- diffusion %>% 
+  filter(site == "Sisters3", date(start_time)==mdy("08-22-2022") |  date(start_time)==mdy("08-23-2022")) 
+  
+sister3_pts_22 <- sister3_pts %>% 
+  full_join(sister3_22, by = "location") %>% 
+  filter(is.na(flux_ch4_mmol)==F)
+```
+
+## Deans Diffusive 8/16/22-8/17/22
+```{r deans diff ch4 8.16, width = 5, units = "in",  echo = F}
+deans_ch4_16 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_16, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)", breaks = c(-0.002, -0.001, 0, 0.001, 0.002, 0.003))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Deans\n16-17 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+
+#breaks for g/m2day  breaks = c(-0.04, -0.02, 0, 0.02, 0.04, 0.06))
+
+trips <- unique(deans_pts_16$trip_wr)
+deans_16_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- deans_pts_16 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  deans_16_dist <- as.matrix(dist(cbind((st_coordinates(deans_pts_16 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(deans_pts_16 %>% filter(trip_wr == trips[i])))[,2])))
+  deans_16_dist_inv <- 1/deans_16_dist
+  diag(deans_16_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, deans_16_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp) %>% mutate(trip = trips[i])
+  
+  deans_16_moran_ch4 <- deans_16_moran_ch4 %>% bind_rows(temp_row)
+}
+
+deans_16_moran_ch4 <- deans_16_moran_ch4 %>% mutate(gas = "CH4", site = "Deans", date = "16-17 Aug")
+```
+
+```{r deans diff co2 8.16, echo = F}
+deans_co2_16 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_16, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)", breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Deans\n16-17 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+
+# breaks for g/m2day , breaks = c(0,2,4,6,8,10,12)
+
+trips <- unique(deans_pts_16$trip_wr)
+deans_16_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- deans_pts_16 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  deans_16_dist <- as.matrix(dist(cbind((st_coordinates(deans_pts_16 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(deans_pts_16 %>% filter(trip_wr == trips[i])))[,2])))
+  deans_16_dist_inv <- 1/deans_16_dist
+  diag(deans_16_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, deans_16_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp) %>% mutate(trip = trips[i])
+  
+  deans_16_moran_co2 <- deans_16_moran_co2 %>% bind_rows(temp_row)
+}
+
+deans_16_moran_co2 <- deans_16_moran_co2 %>% mutate(gas = "CO2", site = "Deans", date = "16-17 Aug")
+```
+
+## Deans Diffusive 8/30/22-8/31/22
+```{r deans diff ch4 8.30, echo = F}
+deans_ch4_30 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_30, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)",  breaks = c(-0.002, -0.001, 0, 0.001, 0.002, 0.003))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Deans\n30-31 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+
+# , breaks = c(-0.04, -0.02, 0, 0.02, 0.04, 0.06)
+
+trips <- unique(deans_pts_30$trip_wr)
+deans_30_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- deans_pts_30 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  deans_30_dist <- as.matrix(dist(cbind((st_coordinates(deans_pts_30 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(deans_pts_30 %>% filter(trip_wr == trips[i])))[,2])))
+  deans_30_dist_inv <- 1/deans_30_dist
+  diag(deans_30_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, deans_30_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  deans_30_moran_ch4 <- deans_30_moran_ch4 %>% bind_rows(temp_row)
+}
+
+deans_30_moran_ch4 <- deans_30_moran_ch4 %>% mutate(gas = "CH4", site = "Deans", date = "30-31 Aug")
+```
+
+```{r deans diff co2 8.30, echo = F}
+deans_co2_30 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_30, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)", breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Deans\n30-31 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+
+#, breaks = c(0,2,4,6,8,10,12)
+
+deans_30_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- deans_pts_30 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  deans_30_dist <- as.matrix(dist(cbind((st_coordinates(deans_pts_30 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(deans_pts_30 %>% filter(trip_wr == trips[i])))[,2])))
+  deans_30_dist_inv <- 1/deans_30_dist
+  diag(deans_30_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, deans_30_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp) %>% mutate(trip = trips[i])
+  
+  deans_30_moran_co2 <- deans_30_moran_co2 %>% bind_rows(temp_row)
+}
+
+deans_30_moran_co2 <- deans_30_moran_co2 %>% mutate(gas = "CO2", site = "Deans", date = "30-31 Aug")
+```
+
+## Catfish Diffusive 9/6/22-9/7/22 
+```{r catfish diff ch4 9.6, echo = F}
+catfish_ch4_06 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_06, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)", breaks = c(-0.003, 0, 0.003, 0.006, 0.009))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Catfish\n06-07 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+#, breaks = c(-0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2)
+
+trips <- unique(catfish_pts_06$trip_wr)
+catfish_06_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- catfish_pts_06 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  catfish_06_dist <- as.matrix(dist(cbind((st_coordinates(catfish_pts_06 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(catfish_pts_06 %>% filter(trip_wr == trips[i])))[,2])))
+  catfish_06_dist_inv <- 1/catfish_06_dist
+  diag(catfish_06_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, catfish_06_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  catfish_06_moran_ch4 <- catfish_06_moran_ch4 %>% bind_rows(temp_row)
+}
+
+catfish_06_moran_ch4 <- catfish_06_moran_ch4 %>% mutate(gas = "CH4", site = "Catfish", date = "06-07 Sept")
+```
+
+```{r catfish diff co2 9.6, echo = F}
+catfish_co2_06 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_06, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)", breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Catfish\n06-07 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+#, breaks = c(0,2,4,6,8,10,12,14)
+
+catfish_06_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- catfish_pts_06 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  catfish_06_dist <- as.matrix(dist(cbind((st_coordinates(catfish_pts_06 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(catfish_pts_06 %>% filter(trip_wr == trips[i])))[,2])))
+  catfish_06_dist_inv <- 1/catfish_06_dist
+  diag(catfish_06_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, catfish_06_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  catfish_06_moran_co2 <- catfish_06_moran_co2 %>% bind_rows(temp_row)
+}
+
+catfish_06_moran_co2 <- catfish_06_moran_co2 %>% mutate(gas = "CO2", site = "Catfish", date = "06-07 Sept")
+```
+
+## Catfish Diffusive 9/18/22-9/19/22 
+```{r catfish diff ch4 9.18, echo = F}
+catfish_ch4_18 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_18, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)", breaks = c(-0.003, 0, 0.003, 0.006, 0.009))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Catfish\n18-19 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+# , breaks = c(-0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2)
+
+trips <- unique(catfish_pts_18$trip_wr)
+catfish_18_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- catfish_pts_18 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  catfish_18_dist <- as.matrix(dist(cbind((st_coordinates(catfish_pts_18 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(catfish_pts_18 %>% filter(trip_wr == trips[i])))[,2])))
+  catfish_18_dist_inv <- 1/catfish_18_dist
+  diag(catfish_18_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, catfish_18_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  catfish_18_moran_ch4 <- catfish_18_moran_ch4 %>% bind_rows(temp_row)
+}
+
+catfish_18_moran_ch4 <- catfish_18_moran_ch4 %>% mutate(gas = "CH4", site = "Catfish", date = "18-19 Sept")
+```
+
+```{r catfish diff co2 9.18, echo = F}
+catfish_co2_18 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_18, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)", breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6))+
+tm_layout(scale = 1.5, legend.outside = T, title = "Catfish\n18-19 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+# , breaks = c(0,2,4,6,8,10,12,14)
+
+catfish_18_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- catfish_pts_18 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  catfish_18_dist <- as.matrix(dist(cbind((st_coordinates(catfish_pts_18 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(catfish_pts_18 %>% filter(trip_wr == trips[i])))[,2])))
+  catfish_18_dist_inv <- 1/catfish_18_dist
+  diag(catfish_18_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, catfish_18_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  catfish_18_moran_co2 <- catfish_18_moran_co2 %>% bind_rows(temp_row)
+}
+
+catfish_18_moran_co2 <- catfish_18_moran_co2 %>% mutate(gas = "CO2", site = "Catfish", date = "18-19 Sept")
+```
+
+## Pick Diffusive 9/13/22- 9/14/22
+```{r pick diff ch4, echo = F}
+pick_ch4_13 <- tm_shape(pick)+
+  tm_polygons(col = "white")+
+tm_shape(pick_pts_13, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T, title = "Blue\nHerron\n13-14 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+trips <- unique(pick_pts_13$trip_wr)
+pick_13_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- pick_pts_13 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  pick_13_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_13 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(pick_pts_13 %>% filter(trip_wr == trips[i])))[,2])))
+  pick_13_dist_inv <- 1/pick_13_dist
+  diag(pick_13_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, pick_13_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp) %>% mutate(trip = trips[i])
+  
+  pick_13_moran_ch4 <- pick_13_moran_ch4 %>% bind_rows(temp_row)
+}
+
+pick_13_moran_ch4 <- pick_13_moran_ch4 %>% mutate(gas = "CH4", site = "Blue Herron", date = "13-14 Sept")
+```
+
+```{r pick diff co2, echo = F}
+pick_co2_13 <- tm_shape(pick)+
+  tm_polygons(col = "white")+
+tm_shape(pick_pts_13, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T, title = "Blue Herron\n13-14 Sept")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=4)
+
+trips <- unique(pick_pts_13$trip_wr)
+pick_13_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- pick_pts_13 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  pick_13_dist <- as.matrix(dist(cbind((st_coordinates(pick_pts_13 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(pick_pts_13 %>% filter(trip_wr == trips[i])))[,2])))
+  pick_13_dist_inv <- 1/pick_13_dist
+  diag(pick_13_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, pick_13_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp) %>% mutate(trip = trips[i])
+  
+  pick_13_moran_co2 <- pick_13_moran_co2 %>% bind_rows(temp_row)
+}
+
+pick_13_moran_co2 <- pick_13_moran_co2 %>% mutate(gas = "CO2", site = "Blue Herron", date = "13-14 Sept")
+```
+
+## Sister3 Diffusive 8/22/22-8/23/22
+```{r sister diff ch4, echo = F}
+sister_ch4_22 <- tm_shape(sister3)+
+  tm_polygons(col = "white")+
+tm_shape(sister3_pts_22, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_ch4_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T, title = "Sister\n22-23 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=2)
+
+trips <- unique(sister3_pts_22$trip_wr)
+sister3_22_moran_ch4 <- NULL
+
+for(i in 1:length(trips)){
+  ch4_fluxes <- sister3_pts_22 %>% filter(trip_wr == trips[i]) %>% pull(flux_ch4_g_hr)
+  sister3_22_dist <- as.matrix(dist(cbind((st_coordinates(sister3_pts_22 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(sister3_pts_22 %>% filter(trip_wr == trips[i])))[,2])))
+  sister3_22_dist_inv <- 1/sister3_22_dist
+  diag(sister3_22_dist_inv) <- 0
+  
+  temp <- Moran.I(ch4_fluxes, sister3_22_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  sister3_22_moran_ch4 <- sister3_22_moran_ch4 %>% bind_rows(temp_row)
+}
+
+sister3_22_moran_ch4 <- sister3_22_moran_ch4 %>% mutate(gas = "CH4", site = "Sister", date = "22-23 Aug")
+```
+
+```{r sister diff co2, echo = F}
+sister_co2_22 <- tm_shape(sister3)+
+  tm_polygons(col = "white")+
+tm_shape(sister3_pts_22, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("flux_co2_g_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CO2 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T, title = "Sister\n22-23 Aug")+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T, nrow=2) 
+
+trips <- unique(sister3_pts_22$trip_wr)
+sister3_22_moran_co2 <- NULL
+
+for(i in 1:length(trips)){
+  co2_fluxes <- sister3_pts_22 %>% filter(trip_wr == trips[i]) %>% pull(flux_co2_g_hr)
+  sister3_22_dist <- as.matrix(dist(cbind((st_coordinates(sister3_pts_22 %>% filter(trip_wr == trips[i])))[,1], (st_coordinates(sister3_pts_22 %>% filter(trip_wr == trips[i])))[,2])))
+  sister3_22_dist_inv <- 1/sister3_22_dist
+  diag(sister3_22_dist_inv) <- 0
+  
+  temp <- Moran.I(co2_fluxes, sister3_22_dist_inv, scaled = T, na.rm = T)
+  temp_row <- as.data.frame(temp)%>% mutate(trip = trips[i])
+  
+  sister3_22_moran_co2 <- sister3_22_moran_co2 %>% bind_rows(temp_row)
+}
+
+sister3_22_moran_co2 <- sister3_22_moran_co2 %>% mutate(gas = "CO2", site = "Sister", date = "22-23 Aug")
+```
+
+```{r moran stitch}
+diff_moran <- bind_rows(deans_16_moran_ch4, deans_16_moran_co2, deans_30_moran_ch4, deans_30_moran_co2, catfish_06_moran_ch4, catfish_06_moran_co2, catfish_18_moran_ch4, catfish_18_moran_co2, pick_13_moran_ch4, pick_13_moran_co2, sister3_22_moran_co2, sister3_22_moran_ch4)
+```

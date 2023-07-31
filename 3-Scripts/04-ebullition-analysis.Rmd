@@ -1,0 +1,48 @@
+# Ebullition Analysis
+
+```{r eb analysis set up, warning=FALSE}
+eb_all <- bind_rows(sister3_pts_22_eb %>% mutate(Site ="Sister3"), 
+                    pick_pts_13_eb,
+                    catfish_pts_18_eb %>% dplyr::select(-c(catfish_dist_1, catfish_dist_2)),
+                    catfish_pts_06_eb %>% dplyr::select(-c(catfish_dist_1, catfish_dist_2)),
+                    deans_pts_30_eb %>% dplyr::select(-c(deans_dist_1, deans_dist_2)),
+                    deans_pts_16_eb%>% dplyr::select(-c(deans_dist_1, deans_dist_2))) %>% 
+  mutate(Site = as.factor(Site))%>% 
+  mutate(Depth_scale = scale(Depth), inlet_dist_scale = scale(inlet_dist))
+
+ebullition_24 <- eb_all %>% 
+  mutate(ch4_eb_g = gas_vol_corrected * (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15), 
+         Collection.Start.Date = case_when(
+           Sampling == "Deans1" ~ ymd("2022-08-16"),
+           Sampling == "Deans2" ~ ymd("2022-08-30"), 
+           Sampling == "Catfish1" ~ ymd("2022-09-06"),
+           Sampling == "Catfish2" ~ ymd("2022-09-18"), 
+           Sampling == "Pick1" ~ ymd("2022-09-13"),
+           Sampling == "Sister31" ~ ymd("2022-08-22")
+         )) %>% 
+  mutate(time_hr_na = if_else(is.na(ch4_eb_g), NA_real_, time_hr)) %>% 
+  group_by(Site, Trap, Sampling, Collection.Start.Date, inlet_dist, Depth, inlet_dist_scale, Depth_scale) %>% 
+  summarize(sum_time = sum(time_hr_na, na.rm = T), sum_g = sum(ch4_eb_g, na.rm = T)) %>% 
+  mutate(area = pi * 81 * 0.0001, ch4_eb_g_m2_hr_24 = sum_g * (1/area)* (1/sum_time))
+```
+
+## Mod7: Not broken up by time, no longer zero-inflated, sampling random effect
+```{r aggregated gamma, echo = F}
+# models with all data
+mod7 <- glmer(ch4_eb_g_m2_hr_24 ~ Depth + inlet_dist + (1|Sampling) , data = ebullition_24 %>% filter(ch4_eb_g_m2_hr_24 > 0), family = Gamma(link = "log"))
+
+mod7.a <- glmer(ch4_eb_g_m2_hr_24 ~ inlet_dist + (1|Sampling) , data = ebullition_24 %>% filter(ch4_eb_g_m2_hr_24 > 0), family = Gamma(link = "log"))
+
+mod7.b <- glmer(ch4_eb_g_m2_hr_24 ~ Depth + (1|Sampling) , data = ebullition_24 %>% filter(ch4_eb_g_m2_hr_24 > 0), family = Gamma(link = "log"))
+
+mod7.c <- glmer(ch4_eb_g_m2_hr_24 ~(1|Sampling) , data = ebullition_24 %>% filter(ch4_eb_g_m2_hr_24 > 0), family = Gamma(link = "log"))
+
+cand.models <- list("depth and inlet"= mod7, 
+                    "inlet"= mod7.a,
+                    "depth"= mod7.b, 
+                    "intercept" = mod7.c)
+aictab(cand.models)
+
+# model excluding Blue Herron 
+mod7.d <- glmer(ch4_eb_g_m2_hr_24 ~ Depth + inlet_dist + (1|Sampling) , data = ebullition_24 %>% filter(ch4_eb_g_m2_hr_24 > 0, Site != "Picks"), family = Gamma(link = "log"))
+```

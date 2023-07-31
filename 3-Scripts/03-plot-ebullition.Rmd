@@ -1,0 +1,227 @@
+# Ebullition
+
+```{r clean ebullition data, echo =F}
+# calculate distances of points from reservoir inlet
+pick_dist <- st_distance(pick_pts, inlet_locations %>% filter(Name == "Picks inlet")) %>% as.numeric()
+pick_pts$inlet_dist <- pick_dist
+
+sister_dist <- st_distance(sister3_pts, inlet_locations %>% filter(Name == "Sister inlet")) %>% as.numeric()
+sister3_pts$inlet_dist <- sister_dist
+
+deans_dist_1 <- st_distance(deans_pts, inlet_locations %>% filter(Name == "Deans inlet 1")) %>% as.numeric()
+deans_pts$deans_dist_1 <- deans_dist_1
+deans_dist_2 <- st_distance(deans_pts, inlet_locations %>% filter(Name == "Deans inlet 2")) %>% as.numeric()
+deans_pts$deans_dist_2 <- deans_dist_2
+deans_pts <- deans_pts %>% mutate(inlet_dist = pmin(deans_dist_1, deans_dist_2))
+
+catfish_dist_1 <- st_distance(catfish_pts, inlet_locations %>% filter(Name == "Catfish inlet 1")) %>% as.numeric()
+catfish_pts$catfish_dist_1 <- catfish_dist_1
+catfish_dist_2 <- st_distance(catfish_pts, inlet_locations %>% filter(Name == "Catfish inlet 2")) %>% as.numeric()
+catfish_pts$catfish_dist_2 <- catfish_dist_2
+catfish_pts <- catfish_pts %>% mutate(inlet_dist = pmin(catfish_dist_1, catfish_dist_2))
+
+# perception corrected volumes
+gas_vols <- read.csv("../2-Clean Data/ebullition-gas-volumes-pcorrect.csv") %>% 
+  mutate(eb_start = ymd_hms(eb_start, tz = "America/New_York"), eb_end = ymd_hms(eb_end, tz="America/New_York"), Collection.Date = date(eb_end))
+
+# fix NAs in deans 8/16 from forgetting to visit D4D in the middle of the night
+gap_start <- gas_vols %>% filter(Trap == "D4C", period == "6~7", Collection.Date ==ymd("2022-08-17")) %>% select(eb_start) %>% pull()
+gap_end <- gas_vols %>% filter(Trap == "D5B", period == "6~7", Collection.Date ==ymd("2022-08-17")) %>% select(eb_start) %>% pull()
+time_diff <- (gap_end-gap_start)/4
+
+gas_vols[gas_vols$Trap == "D4D" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start <- gap_start + time_diff
+gas_vols[gas_vols$Trap == "D4E" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start <- gap_start + time_diff
+gas_vols[gas_vols$Trap == "D5A" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start <- gap_start + time_diff
+
+gas_vols[gas_vols$Trap == "D4D" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$eb_end <- gas_vols[gas_vols$Trap == "D4D" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start 
+
+gas_vols[gas_vols$Trap == "D4E" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$eb_end <- gas_vols[gas_vols$Trap == "D4E" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start 
+
+gas_vols[gas_vols$Trap == "D5A" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$eb_end <- gas_vols[gas_vols$Trap == "D5A" & gas_vols$period == "6~7" & gas_vols$Collection.Date == ymd("2022-08-17"),]$eb_start 
+
+gas_vols[gas_vols$Trap == "D4D" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$Collection.Date <- ymd("2022-08-17")
+
+gas_vols[gas_vols$Trap == "D4E" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$Collection.Date <- ymd("2022-08-17")
+
+gas_vols[gas_vols$Trap == "D5A" & gas_vols$period == "5~6" & date(gas_vols$eb_start) == ymd("2022-08-16"),]$Collection.Date <- ymd("2022-08-17")
+
+gas_vols <- gas_vols %>% mutate(time_hr = (as.numeric(eb_end - eb_start))/60)
+```
+
+```{r, echo=F}
+# Manual check of suspect observations 
+# Filtered out observations deemed not legitimate in the next chunk
+
+# 1033 (Pick PD1 1-2 seems legit, concentration ~68%)
+# 1039 (Pick PD1 7-8 seems legit, concentration >100%)
+# 210 (Catfish C5A 8-9 seems legit, concentration >100%)
+# 235  (Catfish C5D 3~4 seems legit, concentration >100%)
+# 1364 (sister3 S3B 2-3 not legit, concentration < 0.5%)
+# 1035 (Pick P1D 3-4, seems legit, concentration > 100%)
+# 895 (Deans 8/30 3-4, not sure, concentration 11%, probably some ebullition but maybe mixed with atmospheric, but some of the combo concentrations are low)
+# 1209 (Pick P5A 8-9, not legit, filled with Wolffia)
+# 1036 (Pick P1D 4-5 seems legit, concentration >100%)
+```
+
+```{r calculate ebullition, echo = F}
+depths <- read.csv("../2-Clean Data/trap_depths.csv")
+
+samplings <- read.csv("../2-Clean Data/sampling-events.csv") %>%
+  pivot_longer(cols = c("Start.Date", "End.Date"), names_to = "Date.Type", values_to = "Collection.Date") %>%
+  mutate(Sampling = paste0(Site, Event)) %>% select(Sampling, Collection.Date)
+
+# Set to NA gas volumes < -0.5, set volumes between -0.5 and 0 to 0
+# Filter out all 8~9 period for first Deans sampling because times are negative (we sampled ebullition traps before diffusion due to rain)
+gas_vols <- gas_vols %>% 
+  mutate(gas_vol_corrected = if_else(gas_accumulated >0, gas_accumulated, if_else(gas_accumulated < -0.5,  -9999, 0))) %>%
+  mutate(gas_vol_corrected = na_if(gas_vol_corrected, -9999)) %>%
+  left_join(samplings %>% mutate(Collection.Date = mdy(Collection.Date)), by = "Collection.Date") %>%
+  filter(period != "NA~0") %>%
+  filter(!(Sampling == "Deans1" & period == "8~9")) %>% 
+  mutate(area = pi * 81 * 0.0001) %>%
+  mutate(location = Trap)
+
+# Calculate mean concentrations for sampling events for summary figures
+conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+  mutate(corr_ch4 = case_when(
+  Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, # empirical dilution during GC run
+  Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+  Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+  filter(is.na(Data.Flag)==T) %>% 
+  left_join(samplings, by = "Collection.Date") %>% 
+  group_by(Sampling) %>% 
+  summarize(mean_ch4_ppm = mean(corr_ch4, na.rm =T))
+
+# Identify trap periods with concentrations to ensure they are not assigned mean concentrations for summary figures
+conc_match <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+  mutate(corr_ch4 = case_when(
+  Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, 
+  Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+  Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+  filter(is.na(Data.Flag)==T) %>% 
+  filter(str_detect(Location, "^[:alpha:][:digit:][:alpha:]$")==TRUE) %>% 
+  mutate(Collection.Date = mdy(Collection.Date)) %>% 
+  mutate(Trap = case_when(
+    Site == "Picks" ~ paste0("P", str_sub(Location, 2,3)), 
+    Site == "Deans" ~ paste0("D", str_sub(Location, 2,3)),
+    Site == "Sister 3" ~ paste0("S", str_sub(Location, 2,3)),
+    Site == "Catfish" ~ paste0("C", str_sub(Location, 2,3)))) %>% 
+  mutate(period = paste0((Rep-1), "~", Rep))
+  
+ebullition <- gas_vols %>% 
+  left_join(conc_match %>% select(Trap, Collection.Date, period, corr_ch4), by = c("Trap", "Collection.Date", "period")) %>% 
+  left_join(conc, by = "Sampling") %>% 
+  mutate(ch4_conc = if_else(is.na(corr_ch4)==T, mean_ch4_ppm, corr_ch4)) %>%
+  mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)) %>% 
+  mutate(row_id = row_number()) %>% filter(!(row_id)%in% c(1201,1202, 1602,1603)) %>%
+  mutate(trip_wr =factor(case_when(period == "0~1" ~ "9AM - 10AM",
+                             period == "1~2" ~ "10AM - 1PM",
+                             period == "2~3" ~ "1PM - 4PM",
+                             period == "3~4" ~ "4PM - 7PM",
+                             period == "4~5" ~ "7PM - 10PM",
+                             period == "5~6" ~ "10PM - 1AM",
+                             period == "6~7" ~ "1AM - 4AM",
+                             period == "7~8" ~ "4AM - 7AM",
+                             period == "8~9" ~ "7AM - 9AM"), levels = c("9AM - 10AM", "10AM - 1PM", "1PM - 4PM", "4PM - 7PM","7PM - 10PM", "10PM - 1AM", "1AM - 4AM", "4AM - 7AM", "7AM - 9AM")))
+
+deans_16_eb <- ebullition %>%
+  filter(Sampling == "Deans1") %>% left_join(depths %>% filter(Site == "Deans", Date == "8/16/2022") %>% select(Trap, Depth), by = "Trap")
+
+deans_pts_16_eb <- deans_pts %>% full_join(deans_16_eb, by = "location")
+
+deans_30_eb <- ebullition %>%
+  filter(Sampling == "Deans2") %>%
+ left_join(depths %>% filter(Site == "Deans", Date == "8/30/2022") %>% select(Trap, Depth), by = "Trap")
+
+deans_pts_30_eb <- deans_pts %>% full_join(deans_30_eb, by = "location")
+
+catfish_06_eb <- ebullition %>%
+  filter(Sampling == "Catfish1") %>%
+ left_join(depths %>% filter(Site == "Catfish", Date == "9/6/2022") %>% select(Trap, Depth), by = "Trap")
+
+catfish_pts_06_eb <- catfish_pts %>% full_join(catfish_06_eb, by = "location")
+
+catfish_18_eb <- ebullition %>%
+  filter(Sampling == "Catfish2") %>%
+ left_join(depths %>% filter(Site == "Catfish", Date == "9/18/2022") %>% select(Trap, Depth), by = "Trap")
+
+catfish_pts_18_eb <- catfish_pts %>% full_join(catfish_18_eb, by = "location")
+
+pick_13_eb <- ebullition %>%
+  filter(Sampling == "Pick1") %>%
+ left_join(depths %>% filter(Site == "Picks", Date == "9/13/2022") %>% select(Trap, Depth), by = "Trap")
+
+pick_pts_13_eb <- pick_pts %>% full_join(pick_13_eb, by = "location")
+
+sister3_22_eb <- ebullition %>%
+  filter(Sampling == "Sister31") %>%
+ left_join(depths %>% filter(Site == "Sister3", Date == "8/22/2022") %>% select(Trap, Depth), by = "Trap")
+
+sister3_pts_22_eb <- sister3_pts %>% full_join(sister3_22_eb, by = "location")
+```
+
+## Deans Ebullitive 8/16/22-8/17/22
+```{r, width = 5, units = "in",  echo = F}
+deans_eb_16 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_16_eb, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+## Deans Ebullitive 8/30/22-8/31/22
+```{r, width = 5, units = "in",  echo = F}
+deans_eb_30 <- tm_shape(deans)+
+  tm_polygons(col = "white")+
+tm_shape(deans_pts_30_eb, bbox = st_bbox(deans) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+## Catfish Ebullitive 9/06/22-9/07/22 
+```{r, width = 5, units = "in",  echo = F}
+catfish_eb_06 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_06_eb, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+## Catfish Ebullitive 9/18/22-9/19/22 
+```{r, width = 5, units = "in",  echo = F}
+catfish_eb_18 <- tm_shape(catfish)+
+  tm_polygons(col = "white")+
+tm_shape(catfish_pts_18_eb, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+## Pick Ebullitive 9/13/22-9/14/22
+```{r, width = 5, units = "in",  echo = F}
+pick_eb_13 <- tm_shape(pick)+
+  tm_polygons(col = "white")+
+tm_shape(pick_pts_13_eb, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+## Sister Ebullitive 3 8/22/22-8/23/22
+```{r}
+sister_eb_22 <- tm_shape(sister3)+
+  tm_polygons(col = "white")+
+tm_shape(sister3_pts_22_eb, bbox = st_bbox(catfish) %>% st_as_sfc())+
+  tm_dots("ch4_eb_g_m2_hr", size = 0.5, shape = 21, palette = "-RdYlBu", midpoint = NA, title = "CH4 flux (g/m2/hr)")+
+tm_layout(scale = 1.5, legend.outside = T)+
+tm_facets(by = "trip_wr", free.coords = F, inside.original.bbox = T)
+```
+
+```{r}
+to_remove <- c("conc", "conc_match", "deans_16_eb", "deans_30_eb", "pick_13_eb", "sister3_22_eb", "catfish_06_eb", "catfish_18_eb")
+rm(list = to_remove)
+```
+

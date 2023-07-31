@@ -1,0 +1,740 @@
+# Ebullition estimates
+
+```{r eb est set up}
+# load gas volumes and match traps with measured concentrations
+# ebullition_kriging <- gas_vols %>%
+#   left_join(conc_match %>% select(Trap, Collection.Date, period, corr_ch4), by = c("Trap", "Collection.Date", "period")) %>%
+# mutate(row_id = row_number()) %>% filter(!(row_id)%in% c(1201,1202, 1602,1603))
+```
+
+Deans 8/16/22 Ebullition Estimate
+```{r deans 16 eb set up}
+# to run again
+# sim_num <- 2
+# n_num <- 10
+# 
+# # create vector of ch4 concentrations
+# deans1_conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+#   mutate(corr_ch4 = case_when(
+#   Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, 
+#   Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+#   Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+#   filter(is.na(Data.Flag)==T) %>% 
+#   left_join(samplings, by = "Collection.Date") %>% 
+#   filter(Sampling == "Deans1") %>% 
+#   pull(corr_ch4)
+# 
+# 
+# 
+# # define theoretical variogram
+# dean_16_var_eb <- vgm(psill = 1, "Sph", range = 10) 
+# 
+# # define interpolation grid
+# dean_grid <- st_as_stars(st_bbox(deans), dx = 1, dy = 1)
+# dean_grid <- dean_grid[deans]
+# 
+# deans_16_eb_results <- NULL
+# deans_16_eb_results_summarized <- NULL
+# 
+# temp_df <- NULL
+# 
+# krige_par <- function(b){
+# 
+#   deans1_conc_vec <- sample(deans1_conc, 200, replace=T)
+#   
+#   deans_16_eb_kr <- deans_pts %>% 
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Deans1") %>% 
+#                 mutate(ch4_rand = deans1_conc_vec, 
+#            ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>% 
+#              mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+#   
+#   periods <- unique(deans_16_eb_kr$period)
+#   var.lst <- list()
+# 
+#   for(i in 1:length(periods)){
+#   var.lst$data[[i]] <- deans_16_eb_kr %>% filter(period == periods[i])
+#   
+#   # quantile-quantile normal score transform data
+#   var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+#   
+#   var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+#   
+#   var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+#   
+#   var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#   
+# 
+# var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), dean_grid, model = dean_16_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+# above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+# above.max.func <- function(x){
+#   coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#   }
+# below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+# below.min.func <- function(x){
+#   coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+# }
+# 
+# interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+# backtr <- function(x){
+#   if(is.na(x)){
+#     return(NA)
+#   }
+#   if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#     return(above.max.func(x))
+#   }
+#   if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#     return(below.min.func(x))
+#   }
+#   else{
+#     return(interpolate(x))
+#   }
+#     
+# }
+# 
+# 
+#  var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Deans", date = "2022-08-16", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r deans 16 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- lapply(1:2, krige_par)
+# 
+# deans_16_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(deans_16_eb_results,"../5-Results/1-kriged-estimates/deans_16_eb_results.csv")
+```
+
+Deans 8/30/22 Ebullition Estimate
+```{r}
+# sim_num <- 25
+# n_num <- 500
+# 
+# krige_par <- function(b){
+#   deans2_conc_vec <- sample(deans2_conc, 225, replace=T)
+#   
+#   deans_30_eb_kr <- deans_pts %>% 
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Deans2") %>% 
+#                 mutate(ch4_rand = deans2_conc_vec, 
+#                        ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>% 
+#                 mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+#   
+#   periods <- unique(deans_30_eb_kr$period)
+#   var.lst <- list()
+#   
+#   temp_df <- NULL
+#   
+#   for(i in 1:length(periods)){
+#     var.lst$data[[i]] <- deans_30_eb_kr %>% filter(period == periods[i])
+#     
+#     # quantile-quantile normal score transform data
+#     var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+#     
+#     var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+#     
+#     var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+#     
+#     var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#     
+#     
+#     var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), dean_grid, model = dean_30_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+#     
+#     above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+#     above.max.func <- function(x){
+#       coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#     }
+#     below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+#     below.min.func <- function(x){
+#       coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+#     }
+#     
+#     interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+#     backtr <- function(x){
+#       if(is.na(x)){
+#         return(NA)
+#       }
+#       if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#         return(above.max.func(x))
+#       }
+#       if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#         return(below.min.func(x))
+#       }
+#       else{
+#         return(interpolate(x))
+#       }
+#       
+#     }
+#     
+#     var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Deans", date = "2022-08-30", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r deans 30 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- mclapply(1:20, krige_par)
+# 
+# deans_30_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(deans_30_eb_results,"../5-Results/1-kriged-estimates/deans_30_eb_results.csv")
+```
+
+Catfish 9/06/22 Ebullition Estimate
+```{r catfish 06 eb set up}
+# catfish1_conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>%
+#   mutate(corr_ch4 = case_when(
+#   Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497,
+#   Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm,
+#   Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>%
+#   filter(is.na(Data.Flag)==T) %>%
+#   left_join(samplings, by = "Collection.Date") %>%
+#   filter(Sampling == "Catfish1") %>%
+#   pull(corr_ch4)
+# 
+# # define theoretical variogram
+# catfish_06_var_eb <- vgm(psill = 1, "Sph", range = 10)
+# 
+# # define interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_06_eb_results <- NULL
+# catfish_06_eb_results_summarized <- NULL
+# 
+# # # generate variogram based only on volume
+# #
+# # catfish_18_eb_kr <- catfish_pts %>%
+# #     full_join(ebullition_kriging %>%
+# #                 filter(Sampling == "Catfish2"), by = "location")
+# #
+# # periods <- unique(catfish_18_eb_kr$period)
+# # var.lst <- list()
+# #
+# #
+# # for(i in 1:length(periods)){
+# #    var.lst$data[[i]] <- catfish_18_eb_kr %>% filter(period == periods[i])
+# #
+# #    # quantile-quantile normal score transform data
+# #    var.lst$data[[i]]$vol_norm <- qqnorm(var.lst$data[[i]]$gas_vol_corrected, plot.it = F)$x
+# #
+# #    var.lst$var_df[[i]] <- variogram(vol_norm~1, var.lst$data[[i]] %>% filter(is.na(vol_norm) == F), cloud = T)
+# #
+# #    var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# #    }
+# #
+# # pdf("../5-Results/1-kriged-estimates/variograms_catfish_20220918_eb.pdf", paper="a4", width=9, height=12)
+# # marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# # dev.off()
+# 
+# sim_num <- 25
+# n_num <- 500
+# 
+# krige_par <- function(b){
+#   catfish1_conc_vec <- sample(catfish1_conc, 225, replace=T)
+# 
+#   catfish_06_eb_kr <- catfish_pts %>%
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Catfish1") %>%
+#                 mutate(ch4_rand = catfish1_conc_vec,
+#                        ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>%
+#                 mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+# 
+#   periods <- unique(catfish_06_eb_kr$period)
+#   var.lst <- list()
+# 
+#   temp_df <- NULL
+# 
+#   for(i in 1:length(periods)){
+#     var.lst$data[[i]] <- catfish_06_eb_kr %>% filter(period == periods[i])
+# 
+#     # quantile-quantile normal score transform data
+#     var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+# 
+#     var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+# 
+#     var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+# 
+#     var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# 
+# 
+#     var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), catfish_grid, model = catfish_06_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+# 
+#     above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+#     above.max.func <- function(x){
+#       coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#     }
+#     below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+#     below.min.func <- function(x){
+#       coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+#     }
+# 
+#     interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+#     backtr <- function(x){
+#       if(is.na(x)){
+#         return(NA)
+#       }
+#       if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#         return(above.max.func(x))
+#       }
+#       if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#         return(below.min.func(x))
+#       }
+#       else{
+#         return(interpolate(x))
+#       }
+# 
+#     }
+# 
+#     var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+# 
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Catfish", date = "2022-09-06", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r catfish 06 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- lapply(1:20, krige_par)
+# 
+# catfish_06_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(catfish_06_eb_results,"../5-Results/1-kriged-estimates/catfish_06_eb_results.csv")
+```
+
+Catfish 9/18/22 Ebullition Estimate
+```{r catfish 18 eb set up}
+# # create vector of ch4 concentrations
+# catfish2_conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+#   mutate(corr_ch4 = case_when(
+#   Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, 
+#   Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+#   Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+#   filter(is.na(Data.Flag)==T) %>% 
+#   left_join(samplings, by = "Collection.Date") %>% 
+#   filter(Sampling == "Catfish2") %>% 
+#   pull(corr_ch4)
+#   
+# # define theoretical variogram
+# catfish_18_var_eb <- vgm(psill = 1, "Sph", range = 10) 
+# 
+# # define interpolation grid
+# catfish_grid <- st_as_stars(st_bbox(catfish), dx = 1, dy = 1)
+# catfish_grid <- catfish_grid[catfish]
+# 
+# catfish_18_eb_results <- NULL
+# catfish_18_eb_results_summarized <- NULL
+# 
+# # # generate variogram based only on volume
+# # 
+# # catfish_18_eb_kr <- catfish_pts %>%
+# #     full_join(ebullition_kriging %>%
+# #                 filter(Sampling == "Catfish2"), by = "location")
+# # 
+# # periods <- unique(catfish_18_eb_kr$period)
+# # var.lst <- list()
+# # 
+# # 
+# # for(i in 1:length(periods)){
+# #    var.lst$data[[i]] <- catfish_18_eb_kr %>% filter(period == periods[i])
+# # 
+# #    # quantile-quantile normal score transform data
+# #    var.lst$data[[i]]$vol_norm <- qqnorm(var.lst$data[[i]]$gas_vol_corrected, plot.it = F)$x
+# # 
+# #    var.lst$var_df[[i]] <- variogram(vol_norm~1, var.lst$data[[i]] %>% filter(is.na(vol_norm) == F), cloud = T)
+# # 
+# #    var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# #    }
+# # 
+# # pdf("variograms_catfish_20220918_eb.pdf", paper="a4", width=9, height=12)
+# # marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# # dev.off()
+# 
+# sim_num <- 25
+# n_num <- 500
+# 
+# krige_par <- function(b){
+#   catfish2_conc_vec <- sample(catfish2_conc, 225, replace=T)
+#   
+#   catfish_18_eb_kr <- catfish_pts %>% 
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Catfish2") %>% 
+#                 mutate(ch4_rand = catfish2_conc_vec, 
+#                        ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>% 
+#                 mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+#   
+#   periods <- unique(catfish_18_eb_kr$period)
+#   var.lst <- list()
+#   
+#   temp_df <- NULL
+#   
+#   for(i in 1:length(periods)){
+#     var.lst$data[[i]] <- catfish_18_eb_kr %>% filter(period == periods[i])
+#     
+#     # quantile-quantile normal score transform data
+#     var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+#     
+#     var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+#     
+#     var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+#     
+#     var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#     
+#     
+#     var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), catfish_grid, model = catfish_18_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+#     
+#     above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+#     above.max.func <- function(x){
+#       coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#     }
+#     below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+#     below.min.func <- function(x){
+#       coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+#     }
+#     
+#     interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+#     backtr <- function(x){
+#       if(is.na(x)){
+#         return(NA)
+#       }
+#       if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#         return(above.max.func(x))
+#       }
+#       if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#         return(below.min.func(x))
+#       }
+#       else{
+#         return(interpolate(x))
+#       }
+#       
+#     }
+#     
+#     var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Catfish", date = "2022-09-18", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r catfish 18 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- lapply(1:20, krige_par)
+# 
+# catfish_18_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(catfish_18_eb_results,"../5-Results/1-kriged-estimates/catfish_18_eb_results.csv")
+```
+
+Pick 9/13/22 Ebullition Estimate
+```{r pick 13 eb set up}
+# # create vector of ch4 concentrations
+# pick1_conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+#   mutate(corr_ch4 = case_when(
+#   Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, 
+#   Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+#   Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+#   filter(is.na(Data.Flag)==T) %>% 
+#   left_join(samplings, by = "Collection.Date") %>% 
+#   filter(Sampling == "Pick1") %>% 
+#   pull(corr_ch4)
+#   
+# # define theoretical variogram
+# pick_13_var_eb <- vgm(psill = 1, "Sph", range = 10) 
+# 
+# # define interpolation grid
+# pick_grid <- st_as_stars(st_bbox(pick), dx = 1, dy = 1)
+# pick_grid <- pick_grid[pick]
+# 
+# pick_13_eb_results <- NULL
+# pick_13_eb_results_summarized <- NULL
+# 
+# # generate variogram based only on volume
+# 
+# # pick_13_eb_kr <- pick_pts %>%
+# #     full_join(ebullition_kriging %>%
+# #                 filter(Sampling == "Pick1"), by = "location")
+# # 
+# # periods <- unique(pick_13_eb_kr$period)
+# # var.lst <- list()
+# # 
+# # 
+# # for(i in 1:length(periods)){
+# #    var.lst$data[[i]] <- pick_13_eb_kr %>% filter(period == periods[i])
+# # 
+# #    # quantile-quantile normal score transform data
+# #    var.lst$data[[i]]$vol_norm <- qqnorm(var.lst$data[[i]]$gas_vol_corrected, plot.it = F)$x
+# # 
+# #    var.lst$var_df[[i]] <- variogram(vol_norm~1, var.lst$data[[i]] %>% filter(is.na(vol_norm) == F), cloud = T)
+# # 
+# #    var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# #    }
+# # 
+# # pdf("../5-Results/1-kriged-estimates/variograms_pick_20220913_eb.pdf", paper="a4", width=9, height=12)
+# # marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# # dev.off()
+# 
+# sim_num <- 25
+# n_num <- 500
+# 
+# krige_par <- function(b){
+#   pick1_conc_vec <- sample(pick1_conc, 224, replace=T)
+#   
+#   pick_13_eb_kr <- pick_pts %>% 
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Pick1") %>% 
+#                 mutate(ch4_rand = pick1_conc_vec, 
+#                        ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>% 
+#                 mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+#   
+#   periods <- unique(pick_13_eb_kr$period)
+#   var.lst <- list()
+#   
+#   temp_df <- NULL
+#   
+#   for(i in 1:length(periods)){
+#     var.lst$data[[i]] <- pick_13_eb_kr %>% filter(period == periods[i])
+#     
+#     # quantile-quantile normal score transform data
+#     var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+#     
+#     var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+#     
+#     var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+#     
+#     var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#     
+#     
+#     var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), pick_grid, model = pick_13_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+#     
+#     above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+#     above.max.func <- function(x){
+#       coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#     }
+#     below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+#     below.min.func <- function(x){
+#       coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+#     }
+#     
+#     interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+#     backtr <- function(x){
+#       if(is.na(x)){
+#         return(NA)
+#       }
+#       if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#         return(above.max.func(x))
+#       }
+#       if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#         return(below.min.func(x))
+#       }
+#       else{
+#         return(interpolate(x))
+#       }
+#       
+#     }
+#     
+#     var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Pick", date = "2022-09-13", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r pick 13 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- lapply(1:20, krige_par)
+# 
+# pick_13_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(pick_13_eb_results,"../5-Results/1-kriged-estimates/pick_13_eb_results.csv")
+```
+
+Sister3 22 Ebullition Estimate
+```{r sister3 22 eb set up}
+# # create vector of ch4 concentrations
+# sister3_conc <- read.csv("../2-Clean Data/ebullition_concentrations.csv")%>% 
+#   mutate(corr_ch4 = case_when(
+#   Sample.Vol == 0.1 ~ Undiluted.CH4.conc.ppm * 0.473176497, 
+#   Sample.Vol == 0.2 ~ Undiluted.CH4.conc.ppm, 
+#   Sample.Vol == 1 ~ Undiluted.CH4.conc.ppm)) %>% 
+#   filter(is.na(Data.Flag)==T) %>% 
+#   left_join(samplings, by = "Collection.Date") %>% 
+#   filter(Sampling == "Sister31") %>% 
+#   pull(corr_ch4)
+#   
+# # define theoretical variogram
+# sister3_22_var_eb <- vgm(psill = 1, "Sph", range = 6) 
+# 
+# # define interpolation grid
+# sister3_grid <- st_as_stars(st_bbox(sister3), dx = 1, dy = 1)
+# sister3_grid <- sister3_grid[sister3]
+# 
+# sister3_22_eb_results <- NULL
+# sister3_22_eb_results_summarized <- NULL
+# 
+# # generate variogram based only on volume
+# 
+# # sister3_22_eb_kr <- sister3_pts %>%
+# #     full_join(ebullition_kriging %>%
+# #                 filter(Sampling == "Sister31"), by = "location")
+# # 
+# # periods <- unique(sister3_22_eb_kr$period)
+# # var.lst <- list()
+# # 
+# # 
+# # for(i in 1:length(periods)){
+# #    var.lst$data[[i]] <- sister3_22_eb_kr %>% filter(period == periods[i])
+# # 
+# #    # quantile-quantile normal score transform data
+# #    var.lst$data[[i]]$vol_norm <- qqnorm(var.lst$data[[i]]$gas_vol_corrected, plot.it = F)$x
+# # 
+# #    var.lst$var_df[[i]] <- variogram(vol_norm~1, var.lst$data[[i]] %>% filter(is.na(vol_norm) == F), cloud = T)
+# # 
+# #    var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+# #    }
+# # 
+# # pdf("../5-Results/1-kriged-estimates/variograms_sister3_20220822_eb.pdf", paper="a4", width=9, height=12)
+# # marrangeGrob(grobs=compact(var.lst$var_plot), nrow=4, ncol = 2)
+# # dev.off()
+# 
+# sim_num <- 25
+# n_num <- 500
+# 
+# krige_par <- function(b){
+#   sister3_conc_vec <- sample(sister3_conc, 223, replace=T)
+#   
+#   sister3_22_eb_kr <- sister3_pts %>% 
+#     full_join(ebullition_kriging %>%
+#                 filter(Sampling == "Sister31") %>% 
+#                 mutate(ch4_rand = sister3_conc_vec, 
+#                        ch4_conc = if_else(is.na(corr_ch4), ch4_rand, corr_ch4)) %>% 
+#                 mutate(ch4_eb_g_m2_hr = gas_vol_corrected * (1/area) * (1/time_hr)* (1/10^6) * ch4_conc * (1/10^3) * 16.04 * (1/0.0821)* (1/293.15)), by = "location")
+#   
+#   periods <- unique(sister3_22_eb_kr$period)
+#   var.lst <- list()
+#   
+#   temp_df <- NULL
+#   
+#   for(i in 1:length(periods)){
+#     var.lst$data[[i]] <- sister3_22_eb_kr %>% filter(period == periods[i])
+#     
+#     # quantile-quantile normal score transform data
+#     var.lst$data[[i]]$norm_eb <- qqnorm(var.lst$data[[i]]$ch4_eb_g_m2_hr, plot.it = F)$x
+#     
+#     var.lst$nscore.tab[[i]] <- nscore(var.lst$data[[i]]$ch4_eb_g_m2_hr)
+#     
+#     var.lst$var_df[[i]] <- variogram(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), cloud = T)
+#     
+#     var.lst$var_plot[[i]] <- ggplot(var.lst$var_df[[i]], aes(dist, gamma))+geom_point(size =2)+theme_bw()+labs(title = periods[i])
+#     
+#     
+#     var.lst$kriged[[i]] <- krige(norm_eb~1, var.lst$data[[i]] %>% filter(is.na(norm_eb) == F), sister3_grid, model = sister3_22_var_eb, nsim=sim_num, maxdist = Inf,nmin = 0,omax=Inf, beta = 0, nmax = n_num, debug.level = -1)
+#     
+#     above.max.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][(nrow(var.lst$nscore.tab[[i]])-1):nrow(var.lst$nscore.tab[[i]]),])
+#     above.max.func <- function(x){
+#       coefficients(above.max.lm)[[1]] + (coefficients(above.max.lm)[[2]]*x)
+#     }
+#     below.min.lm <- lm(x~nscore, data=var.lst$nscore.tab[[i]][1:2,])
+#     below.min.func <- function(x){
+#       coefficients(below.min.lm)[[1]] + (coefficients(below.min.lm)[[2]]*x)
+#     }
+#     
+#     interpolate <- approxfun(x=var.lst$nscore.tab[[i]]$nscore, y=var.lst$nscore.tab[[i]]$x)
+#     backtr <- function(x){
+#       if(is.na(x)){
+#         return(NA)
+#       }
+#       if(x>max(var.lst$nscore.tab[[i]]$nscore)){
+#         return(above.max.func(x))
+#       }
+#       if(x<min(var.lst$nscore.tab[[i]]$nscore)){
+#         return(below.min.func(x))
+#       }
+#       else{
+#         return(interpolate(x))
+#       }
+#       
+#     }
+#     
+#     var.lst$kriged[[i]]$backtransformed <- st_apply(var.lst$kriged[[i]][1], 1:3, backtr)
+# 
+#   sim_vec <- c()
+#   for(f in 1:sim_num){
+#     sim_vec <- c(sum(var.lst$kriged[[i]][2,,,f]$backtransformed, na.rm = T), sim_vec)
+#   }
+#   
+#   temp_df <- bind_rows(temp_df, data.frame(site = "Sister3", date = "2022-08-22", period = i, gas = "CH4", sum_flux = sim_vec))
+#   }
+#   return(temp_df)
+# }
+```
+
+```{r sister3 22 eb run}
+# s_time <- Sys.time()
+# temp_list <- list()
+# temp_list <- lapply(1:20, krige_par)
+# 
+# sister3_22_eb_results <- bind_rows(temp_list)
+# e_time <- Sys.time()
+# print("total time:")
+# print(e_time-s_time)
+# 
+# write.csv(sister3_22_eb_results,"../5-Results/1-kriged-estimates/sister3_22_eb_results.csv")
+```
+

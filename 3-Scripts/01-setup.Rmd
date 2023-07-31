@@ -1,0 +1,340 @@
+--- 
+title: "Naslund Chapter 1 Analysis"
+author: "Laura Naslund"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Load packages
+```{r load packages, include=F}
+my_packages <- c("tidyverse", "mapview", "lubridate", "sf", "data.table", "dygraphs", "xts", "gstat", "stars", "automap", "viridis", "tmap", "gridExtra", "lme4", "AICcmodavg", "ggeffects", "lmerTest", "plotly", "performance", "hms", "cowplot", "MuMIn", "glmmTMB", "ape", "report", "ggrepel", "lmer", "usmap", "scales")
+lapply(my_packages, require, character.only = TRUE)
+
+source("functions/data_munge_functions.R")
+
+options(dplyr.summarise.inform = FALSE)
+```
+
+# Trap locations
+```{r load dfs, include = F}
+# Trap locations and pond polygons in WGS 84 / UTM zone 17N
+
+# Create sf object of ebullition trap locations
+trap_locations <- read.csv("../2-Clean Data/ebullition-trap-locations.csv") %>% 
+  filter(str_sub(Name, 2,2) %>% str_detect("[:alpha:]")==F) %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs=4326) %>% 
+  st_transform(crs = 32617) %>% 
+  mutate(Site = case_when(
+    str_sub(Name, 1, 1) == "P" ~"Pick",
+    str_sub(Name, 1, 1) == "D" ~"Deans",
+    str_sub(Name, 1, 1) == "S" ~"Sister3",
+    str_sub(Name, 1, 1) == "C" ~"Catfish",
+  )) %>% 
+  select(-Description)
+
+# Objects with just locations for individual sites
+deans_pts <- trap_locations %>% 
+  filter(Site == "Deans") %>% 
+  select(Name, GeometryType, geometry) %>% 
+  rename(location = Name)
+
+catfish_pts <- trap_locations%>% 
+  filter(Site == "Catfish") %>% 
+  select(Name, GeometryType, geometry) %>% 
+  rename(location = Name)
+
+pick_pts <- trap_locations%>% 
+  filter(Site == "Pick") %>% 
+  select(Name, GeometryType, geometry) %>% 
+  rename(location = Name)
+
+sister3_pts <- trap_locations %>% 
+  filter(Site == "Sister3") %>% 
+  select(Name, GeometryType, geometry) %>% 
+  rename(location = Name)
+
+# Create sf object of pond inlets
+inlet_locations <- read.csv("../2-Clean Data/inlet-locations.csv") %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs=4326) %>% 
+  st_transform(crs = 32617)
+
+# Create sf objects of ponds
+deans <- read_sf("../2-Clean Data/site_shapefiles/Deans.shp") %>% 
+  st_transform(crs = 32617)
+catfish <- read_sf("../2-Clean Data/site_shapefiles/Catfish.shp") %>% 
+  st_transform(crs = 32617)
+sister3 <- read_sf("../2-Clean Data/Site_Shapefiles/Sister3.shp") %>% 
+  st_transform(crs = 32617)
+pick <- read_sf("../2-Clean Data/Site_Shapefiles/Pick.shp") %>% # in published work called Blue Herron
+  st_transform(crs = 32617)
+```
+
+# Continuous dissolved oxygen
+```{r read do data, include = F}
+do_list <- list.files("../2-Clean Data/do")
+do <- NULL
+
+for(i in 1:length(do_list)){
+  temporary <- fread(paste0("../2-Clean Data/do/", do_list[i])) %>% 
+  slice(-1) %>% 
+  mutate(DO_mgL = as.numeric(DO_mgL), Date_Time = ymd_hms(Date_Time, tz="America/New_York"), site = str_extract(do_list[i], "[:alpha:]+(?=_)"), location = str_extract(do_list[i], "(?<=_)[:alpha:]+(?=\\.)"))
+  
+   do <- bind_rows(do, temporary)
+  
+  assign(str_extract(do_list[i], ".*(?=\\.)"), 
+         as.xts(temporary$DO_mgL, order.by = temporary$Date_Time)
+         )
+}
+
+do <- sampling_filter_24hr(do %>%
+  mutate(site = if_else(site == "Pick", "Blue Herron", site)))
+```
+
+# Continuous temperature
+```{r read temperature data, echo = F}
+temp_list <- list.files("../2-Clean Data/temperature")
+all_temps <- NULL
+
+for(i in 1:length(temp_list)){
+  temporary <- read.csv(paste0("../2-Clean Data/temperature/", temp_list[i])) %>% 
+  mutate(temp = as.numeric(temp), date = ymd_hms(date, tz="America/New_York"))
+  all_temps <- bind_rows(all_temps, temporary)
+  
+  assign(str_extract(temp_list[i], ".*(?=\\.)"), 
+         temporary %>% filter(is.na(temp)==F)
+         )
+}
+
+all_temps <- sampling_filter_24hr(all_temps %>% mutate(Date_Time = date) %>% 
+    mutate(site = if_else(site == "Pick", "Blue Herron", if_else(site == "Sister3", "Sister", site)))) %>%
+  select(-Date_Time)
+
+top_temp <- sampling_filter_24hr(all_temps %>% 
+  filter(is.na(sampling)==F, depth == 0.25) %>% rename("Date_Time" = "date"))
+```
+
+# Continuous par
+```{r par set up, include = F}
+# calibrated units, probably umol/m2/s
+par <- read.csv("../2-Clean Data/par.csv") %>% mutate(date_time = mdy_hm(time_et, tz = "America/New_York"))
+```
+
+
+# Dissolved gas concentrations
+```{r setup, include=FALSE}
+equil_temps <- read.csv("../1-Raw Data/dissolved-gas/EquilibrationTemps_2022.csv") %>% 
+  mutate(Vial = as.character(Vial))
+
+# air gas certifies that CO and CO2 impurities do not exceed 1% in ultra pure zero air, so as a conservative approach, I set CO2 purge gas concentration to 1 ppm
+
+data_20221011 <- read.csv("../1-Raw Data/dissolved-gas/GC_Data_20221011_equil.csv") %>% 
+  left_join(equil_temps %>% select(Vial, Temp), by = "Vial") %>% 
+  mutate(Barometric_P = 0.93, # in atm
+         Headspace_equil_P = 0.93, # in atm
+         Headspace_vol = 0.02, # in L
+         Liquid_vol = 0.04, # in L
+         Final_Headspace_Mixing_CH4_ppm = CH4.conc.ppm, 
+         Final_Headspace_Mixing_CO2_ppm = CO2.conc.ppm, 
+         Source_Gas_Mixing_CH4_ppm = 0, 
+         Source_Gas_Mixing_CO2_ppm = 1, 
+         Headspace_Equil_Temp_K = Temp + 273.15, # in K
+         Bunsen_Sol_CH4 = (2.7182818^(-67.1962+(99.1624*(100/Headspace_Equil_Temp_K))+(27.9015*log(Headspace_Equil_Temp_K/100)))), 
+         Bunsen_Sol_CO2 = (2.7182818^(-58.0931+(90.5069*(100/Headspace_Equil_Temp_K))+(22.294*log(Headspace_Equil_Temp_K/100))))*((0.0821*273.15)+((-1636.75+(12.0408*273.15)-(3.27957*0.01*273.15*273.15)+(3.16528*0.00001*273.15*273.15*273.15))/1000)), # L/L-atm
+         
+         Source_Gas_CH4_umol = (Source_Gas_Mixing_CH4_ppm * Barometric_P) /(0.0821*Headspace_Equil_Temp_K), # in umol/L
+         Source_Gas_CO2_umol = (Source_Gas_Mixing_CO2_ppm * Barometric_P) /(0.0821*Headspace_Equil_Temp_K), # in umol/L
+         Final_Headspace_CH4_umol =  (Final_Headspace_Mixing_CH4_ppm * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), # in umol/L
+         Final_Headspace_CO2_umol =  (Final_Headspace_Mixing_CO2_ppm * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), # in umol/L
+
+         Final_Liq_CH4_umol =  (Final_Headspace_Mixing_CH4_ppm* Bunsen_Sol_CH4 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), # in umol/L
+         Final_Liq_CO2_umol =  (Final_Headspace_Mixing_CO2_ppm* Bunsen_Sol_CO2 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), # in umol/L
+         Total_Gas_CH4_umol = (Final_Liq_CH4_umol * Liquid_vol) + (Final_Headspace_CH4_umol*Headspace_vol), # in umol
+         Total_Gas_CO2_umol = (Final_Liq_CO2_umol * Liquid_vol) + (Final_Headspace_CO2_umol*Headspace_vol), # in umol
+         Original_Liq_CH4_umol = (Total_Gas_CH4_umol-(Source_Gas_CH4_umol*Headspace_vol))/Liquid_vol, # in umol/L
+         Original_Liq_CO2_umol = (Total_Gas_CO2_umol-(Source_Gas_CO2_umol*Headspace_vol))/Liquid_vol) # in umol/L
+          
+data_20221013 <- read.csv("../1-Raw Data/dissolved-gas/GC_Data_20221013_equil.csv") %>% 
+  left_join(equil_temps %>% select(Vial, Temp), by = "Vial") %>% 
+  mutate(Barometric_P = 0.93, 
+         Headspace_equil_P = 0.93, 
+         Headspace_vol = 0.02, 
+         Liquid_vol = 0.04, 
+         Final_Headspace_Mixing_CH4_ppm = Measured.CH4.conc.ppm, 
+         Final_Headspace_Mixing_CO2_ppm = Measured.CO2.conc.ppm, 
+         Source_Gas_Mixing_CH4_ppm = 0, 
+         Source_Gas_Mixing_CO2_ppm = 1, 
+         Headspace_Equil_Temp_K = Temp + 273.15, 
+         Bunsen_Sol_CH4 = (2.7182818^(-67.1962+(99.1624*(100/Headspace_Equil_Temp_K))+(27.9015*log(Headspace_Equil_Temp_K/100)))), 
+         Bunsen_Sol_CO2 = (2.7182818^(-58.0931+(90.5069*(100/Headspace_Equil_Temp_K))+(22.294*log(Headspace_Equil_Temp_K/100))))*
+           ((0.0821*273.15)+((-1636.75+(12.0408*273.15)-(3.27957*0.01*273.15*273.15)+(3.16528*0.00001*273.15*273.15*273.15))/1000)), 
+         Source_Gas_CH4_umol = Source_Gas_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Source_Gas_CO2_umol = Source_Gas_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CH4_umol =  Final_Headspace_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CO2_umol =  Final_Headspace_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CH4_umol =  (Final_Headspace_Mixing_CH4_ppm* Bunsen_Sol_CH4 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CO2_umol =  (Final_Headspace_Mixing_CO2_ppm* Bunsen_Sol_CO2 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Total_Gas_CH4_umol = (Final_Liq_CH4_umol * Liquid_vol) + (Final_Headspace_CH4_umol*Headspace_vol), 
+         Total_Gas_CO2_umol = (Final_Liq_CO2_umol * Liquid_vol) + (Final_Headspace_CO2_umol*Headspace_vol), 
+         Original_Liq_CH4_umol = (Total_Gas_CH4_umol-(Source_Gas_CH4_umol*Headspace_vol))/Liquid_vol, 
+         Original_Liq_CO2_umol = (Total_Gas_CO2_umol-(Source_Gas_CO2_umol*Headspace_vol))/Liquid_vol)
+
+data_20221012 <- read.csv("../1-Raw Data/dissolved-gas/GC_Data_20221012_equil.csv")
+
+data_20221012 <- data_20221012 %>% 
+  left_join(equil_temps %>% mutate(Vial = paste0("0", Vial)) %>% select(Vial, Temp), by = "Vial") %>% 
+  mutate(Barometric_P = 0.93, 
+         Headspace_equil_P = 0.93, 
+         Headspace_vol = 0.02, 
+         Liquid_vol = 0.04, 
+         Final_Headspace_Mixing_CH4_ppm = Undiluted.CH4.conc.ppm, 
+         Final_Headspace_Mixing_CO2_ppm = Undiluted.CO2.conc.ppm, 
+         Source_Gas_Mixing_CH4_ppm = 0, 
+         Source_Gas_Mixing_CO2_ppm = 1, 
+         Headspace_Equil_Temp_K = Temp + 273.15, 
+         Bunsen_Sol_CH4 = (2.7182818^(-67.1962+(99.1624*(100/Headspace_Equil_Temp_K))+(27.9015*log(Headspace_Equil_Temp_K/100)))), 
+         Bunsen_Sol_CO2 = (2.7182818^(-58.0931+(90.5069*(100/Headspace_Equil_Temp_K))+(22.294*log(Headspace_Equil_Temp_K/100))))*((0.0821*273.15)+((-1636.75+(12.0408*273.15)-(3.27957*0.01*273.15*273.15)+(3.16528*0.00001*273.15*273.15*273.15))/1000)), 
+         Source_Gas_CH4_umol = Source_Gas_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Source_Gas_CO2_umol = Source_Gas_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CH4_umol =  Final_Headspace_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CO2_umol =  Final_Headspace_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CH4_umol =  (Final_Headspace_Mixing_CH4_ppm* Bunsen_Sol_CH4 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CO2_umol =  (Final_Headspace_Mixing_CO2_ppm* Bunsen_Sol_CO2 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Total_Gas_CH4_umol = (Final_Liq_CH4_umol * Liquid_vol) + (Final_Headspace_CH4_umol*Headspace_vol), 
+         Total_Gas_CO2_umol = (Final_Liq_CO2_umol * Liquid_vol) + (Final_Headspace_CO2_umol*Headspace_vol), 
+         Original_Liq_CH4_umol = (Total_Gas_CH4_umol-(Source_Gas_CH4_umol*Headspace_vol))/Liquid_vol, 
+         Original_Liq_CO2_umol = (Total_Gas_CO2_umol-(Source_Gas_CO2_umol*Headspace_vol))/Liquid_vol)
+
+data_20221014 <- read.csv("../1-Raw Data/dissolved-gas/GC_Data_20221014_equil.csv")
+
+data_20221014 <- data_20221014 %>% 
+  left_join(equil_temps %>% mutate(Vial = paste0("0", Vial)) %>% select(Vial, Temp), by = "Vial") %>% 
+  mutate(Barometric_P = 0.93, 
+         Headspace_equil_P = 0.93, 
+         Headspace_vol = 0.02, 
+         Liquid_vol = 0.04, 
+         Final_Headspace_Mixing_CH4_ppm = Undiluted.CH4.conc.ppm, 
+         Final_Headspace_Mixing_CO2_ppm = Undiluted.CO2.conc.ppm, 
+         Source_Gas_Mixing_CH4_ppm = 0, 
+         Source_Gas_Mixing_CO2_ppm = 1, 
+         Headspace_Equil_Temp_K = Temp + 273.15, 
+         Bunsen_Sol_CH4 = (2.7182818^(-67.1962+(99.1624*(100/Headspace_Equil_Temp_K))+(27.9015*log(Headspace_Equil_Temp_K/100)))), 
+         Bunsen_Sol_CO2 = (2.7182818^(-58.0931+(90.5069*(100/Headspace_Equil_Temp_K))+(22.294*log(Headspace_Equil_Temp_K/100))))*((0.0821*273.15)+((-1636.75+(12.0408*273.15)-(3.27957*0.01*273.15*273.15)+(3.16528*0.00001*273.15*273.15*273.15))/1000)), 
+         Source_Gas_CH4_umol = Source_Gas_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Source_Gas_CO2_umol = Source_Gas_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CH4_umol =  Final_Headspace_Mixing_CH4_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Headspace_CO2_umol =  Final_Headspace_Mixing_CO2_ppm/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CH4_umol =  (Final_Headspace_Mixing_CH4_ppm* Bunsen_Sol_CH4 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Final_Liq_CO2_umol =  (Final_Headspace_Mixing_CO2_ppm* Bunsen_Sol_CO2 * Headspace_equil_P)/(0.0821*Headspace_Equil_Temp_K), 
+         Total_Gas_CH4_umol = (Final_Liq_CH4_umol * Liquid_vol) + (Final_Headspace_CH4_umol*Headspace_vol), 
+         Total_Gas_CO2_umol = (Final_Liq_CO2_umol * Liquid_vol) + (Final_Headspace_CO2_umol*Headspace_vol), 
+         Original_Liq_CH4_umol = (Total_Gas_CH4_umol-(Source_Gas_CH4_umol*Headspace_vol))/Liquid_vol, 
+         Original_Liq_CO2_umol = (Total_Gas_CO2_umol-(Source_Gas_CO2_umol*Headspace_vol))/Liquid_vol)
+
+gc1 <- data_20221011 %>%  select(Site, Location, Rep, Collection.Date, Notes, Original_Liq_CH4_umol, Original_Liq_CO2_umol)
+gc2 <- data_20221013 %>% select(Site, Location, Rep, Collection.Date, Notes, Original_Liq_CH4_umol, Original_Liq_CO2_umol)
+gc3 <- data_20221012 %>% select(Site, Location, Rep, Collection.Date, Notes, Original_Liq_CH4_umol, Original_Liq_CO2_umol)
+gc4 <- data_20221014 %>% select(Site, Location, Rep, Collection.Date, Notes, Original_Liq_CH4_umol, Original_Liq_CO2_umol)
+
+gc <- bind_rows(gc1, gc2, gc3, gc4)
+
+write.csv(gc, "../2-Clean Data/dissolved-gas.csv", row.names = F)
+```
+
+
+```{r dissolved gas conc}
+gc <- read.csv("../2-Clean Data/dissolved-gas.csv")
+
+gc_summarized <- gc %>% mutate_if(is.character, 
+                str_replace_all, 
+                pattern = "Picks", 
+                replacement = "Blue Herron") %>%
+  mutate_if(is.character, 
+                str_replace_all, 
+                pattern = "Sister3", 
+                replacement = "Sister") %>%
+  mutate_if(is.character, 
+                str_replace_all, 
+                pattern = "oulet", 
+                replacement = "outlet")%>% 
+  group_by(Site, Collection.Date, Location) %>% 
+  summarize(CH4_avg_umol = mean(Original_Liq_CH4_umol), 
+            CO2_avg_umol = mean(Original_Liq_CO2_umol), 
+            CH4_sd = sd(Original_Liq_CH4_umol, na.rm = T), 
+            CO2_sd = sd(Original_Liq_CO2_umol, na.rm = T), reps = n()) %>% # umol/L
+  mutate(Location = factor(Location, levels = c("top","bottom", "inlet", "outlet")))
+```
+
+## Wind speed
+```{r wind speed, echo = F}
+ws <- read.csv("../2-Clean Data/anemom_all.csv") %>% mutate(Trip == as.factor(Trip)) %>% 
+  mutate(sampling = case_when(sampling == "Catfish1" ~"Catfish 9/06/22",
+                              sampling == "Catfish2" ~ "Catfish 9/18/22",
+                              sampling == "Deans1" ~ "Deans 8/16/22",
+                              sampling == "Deans2" ~ "Deans 8/30/22", 
+                              sampling == "Pick1" ~ "Pick 9/13/22",
+                              sampling == "Sister31" ~ "Sister3 8/22/22"))
+```
+
+## Residence time calculation 
+```{r res time calc, include = F}
+# Calculated discharge from a regional regression equation using average annual precipitation and watershed area (Gotvald et al. 2017). https://pubs.er.usgs.gov/publication/sir20175001 
+
+# (9.20 × 10–6)(DRNAREA)0.993(PRECIP)2.97
+# Drainage area is in square miles, precip 48.7 inches from PRISM
+q <- read.csv("../2-Clean Data/discharge.csv") %>% 
+  mutate(q = ((Vol_ml*10^-6)/Time_s), 
+         Vol_m3 = case_when(Site == "Deans" ~ st_area(deans) %>% as.numeric()*2.03, 
+                             Site == "Catfish" ~ st_area(catfish) %>% as.numeric()*0.8, 
+                             Site == "Sister3" ~ st_area(sister3) %>% as.numeric()*1.25, 
+                             Site == "Pick" ~ st_area(pick) %>% as.numeric()*1.58), 
+         res_time_day = (Vol_m3/q)* (1/86400))
+
+res_time <- data.frame(
+  site = c("Blue Herron", "Sister", "Catfish", "Deans"),
+  ws_area_m2 = c(301000, 79700, 80600, 202600), 
+  pond_vol_m3 = c(st_area(pick) %>% as.numeric()*1.58, st_area(sister3) %>% as.numeric()*1.25, st_area(catfish) %>% as.numeric()*0.8, st_area(deans) %>% as.numeric()*2.03)
+) %>% 
+  mutate(ws_area_sqmil = ws_area_m2 * 3.86102e-7, 
+         qa_ft3s = (9.2 * 10^-6)*((ws_area_sqmil)^0.993)*((48.7)^2.97), 
+         qa_m3s = qa_ft3s * 0.0283168, 
+         res_time_s = pond_vol_m3/qa_m3s, 
+         res_time_d = res_time_s *(1/86400))
+```
+
+# Modal sampling time for dissolved gases in NEON lakes
+```{r neon mode, include = F}
+# neon_util <- loadByProduct(dpID="DP1.20097.001",
+#                                    site=c("CRAM", "BARC", "SUGG", "LIRO", "PRLA", "TOOK"),
+#                                    startdate="2016-01", enddate="2023-04",
+#                                    package="basic", 
+#                            token = token)
+# 
+# list2env(neon_util, .GlobalEnv)
+
+# temp <- sdg_fieldData %>% mutate(date_time = case_when(
+#   siteID == "CRAM" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#   siteID == "BARC" ~ with_tz(collectDate, "America/New_York") %>% force_tz(),
+#   siteID == "SUGG" ~ with_tz(collectDate, "America/New_York") %>% force_tz(),
+#   siteID == "LIRO" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#   siteID == "PRLA" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#   siteID == "TOOK" ~ with_tz(collectDate, "America/Anchorage")%>% force_tz()
+# )) %>% mutate(time = paste(Sys.Date(), format(date_time, format="%H:%M:%S"), sep = " ") %>% ymd_hms())
+# 
+# # write.csv(temp, "../2-Clean Data/NEON-gas-times.csv")
+# 
+neon <- read.csv("../2-Clean Data/NEON-gas-times.csv") %>% mutate(time = ymd_hms(time), time_num = time %>% as.numeric(), time_dt = time_num %>% as_datetime)
+
+ggplot(neon, aes(time_dt))+geom_histogram()
+
+which.max(density(neon$time_num)$y)
+density(neon$time_num)$x[232]
+
+as_datetime(1681727985)
+
+# CRAM "America/Chicago"
+# BARC "America/New_York"
+# SUGG "America/New_York"
+# LIRO "America/Chicago"
+# PRLA "America/Chicago"
+# TOOK "America/Anchorage"
+```

@@ -1,0 +1,25 @@
+---
+title: "Collate_Diffusion_Estimates"
+author: "L. Naslund"
+date: "2023-07-25"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+loc <- "../../1-Raw Data/flux/processed-flux"
+
+file_list <- list.files(loc)
+
+diffusive_fluxes <- NULL
+
+for(i in 1:length(file_list)){
+  temp <- read.csv(paste(loc, file_list[i], sep = "/"))
+  
+  diffusive_fluxes <- bind_rows(diffusive_fluxes, temp)
+}
+
+write.csv(diffusive_fluxes, "../../2-Clean Data/diffusive-fluxes.csv", row.names = FALSE)
+```
+

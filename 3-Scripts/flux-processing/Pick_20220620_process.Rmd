@@ -1,0 +1,375 @@
+---
+title: "Pick_20220620_process"
+author: "L. Naslund"
+date: "2023-02-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits.secs = 10)
+
+library(tidyverse)
+library(lubridate)
+library(xts)
+library(dygraphs)
+library(plotly)
+library(shiny)
+library(gridExtra)
+library(rLakeAnalyzer)
+```
+
+## Load functions and data
+
+The function `file.finder()` searches through a directory for data files between specified dates. The ABB analyzer saves data in a folder labeled with the sampling date. This function works if all of the output folders are saved in a single directory and retain their original date names. This function also works to find temperature data, if the data are saved in the ABB date folders with the "temp" in the file name.
+
+* *data.path:* the file path for the directory where the data are saved
+* *start:* start date for the files to be analyzed
+* *end:* end date for the files to be analyzed 
+* *type:* file type ("flux" or "temperature")
+
+The function `read.flux()` loads and formats flux data files listed in a vector containing the file paths for desired flux files, such as the output from `file.finder()`.
+
+* *flux_files:* vector containing the file paths for desired flux files
+* *time.zone:* time zone of date times in flux files (complete list available with `OlsonNames()`)
+
+```{r load functions & files}
+source("../functions/gas_functions_final.R")
+
+flux_files <- file.finder(data.path = "../../1-Raw Data/flux", start="2022-06-20", end= "2022-06-21", type="flux")
+temp_files <- file.finder(data.path = "../../1-Raw Data/flux", start="2022-06-20", end= "2022-06-21", type="temperature")
+
+data <- read.flux(flux_files, "America/New_York")
+
+times <-read.csv("../../1-Raw Data/flux/2022-06-20/Pick_20220620_times.csv") %>% filter(is.na(diffusive.start)==FALSE, is.na(diffusive.end)==FALSE, diffusive.start!="", diffusive.end!="") %>% mutate(Start= mdy_hms(paste(date, diffusive.start, sep=" "), tz="America/New_York"), End= mdy_hms(paste(date, diffusive.end, sep= " "), tz="America/New_York")) 
+
+temp_data <- read.temp(temp_files, "America/New_York") %>% rename("date_time_sec" = "date_time")
+
+baro <- read.csv("../../1-Raw Data/flux/2022-06-20/barometer_20220620.csv") %>% 
+  mutate(date_time_min = mdy_hm(Timestamp, tz= "America/New_York")) %>% 
+  select(-Record.ID, -Timestamp) %>% 
+  mutate(Barometer = Barometer * 3386.39) # conversion from in Hg to Pa
+
+baro_times <- data.frame(date_time_min = seq(baro$date_time_min[1], baro$date_time_min[nrow(baro)], by = "min"))
+
+baro <- baro_times %>% 
+  left_join(baro, by = "date_time_min") %>% 
+  fill(Barometer)
+
+water_temp <- read.csv("../../1-Raw Data/flux/2022-06-20/pick_0.25.csv") %>%
+  mutate(date_time = ymd_hms(date, tz = "America/New_York")) %>% 
+  filter(date_time > (min(times$Start)-minutes(15)) & date_time < (max(times$End)+minutes(15))) %>%
+  rename("water_temp" = "temp")
+
+water_temp_times <- data.frame(date_time = seq(water_temp$date_time[1], water_temp$date_time[nrow(water_temp)], by = "min"))
+
+water_temp <- water_temp_times %>% 
+  left_join(water_temp, by = "date_time") %>% 
+  select(date_time, water_temp) %>% 
+  fill(water_temp) %>% 
+  rename("date_time_min" = "date_time")
+
+```
+
+```{r functions for broken analyzer}
+# functions to calculate volume and pressure over the course of the flux measurement
+volume_calc <- function(seconds, height=0.127, width=0.3429, length=0.3429){
+  water_height <- 6.833333e-05 * seconds
+  functional_chamber_height <- height - water_height
+  volume <- (functional_chamber_height * length * width)
+  
+  return(volume)
+}
+
+pressure_calc <- function(seconds, p1, rho){
+  p2 <- p1 - (6.833333e-05 * seconds * rho * 9.81)
+  return(p2)
+}
+
+point.slopes.mol <- function(ts, num.pts){
+  
+  slope_list <- list()
+  ts_list <- list()
+  
+  for(i in 1:(nrow(ts)-num.pts+1)){
+    slope_list$start[i] <- i
+    ind <- c(i:(i+num.pts-1))
+    ts_list[[i]] <- ts %>% slice(ind)
+    
+    slope_list$slope_ch4[i] <- coef(lm(moles_CH4 ~ secs, data=ts %>% slice(ind)))[[2]]
+    slope_list$r2_ch4[i] <- summary(lm(moles_CH4 ~ secs, data=ts %>% slice(ind)))$r.squared
+    
+    slope_list$slope_co2[i] <- coef(lm(moles_CO2 ~ secs, data=ts %>% slice(ind)))[[2]]
+    slope_list$r2_co2[i] <- summary(lm(moles_CO2 ~ secs, data=ts %>% slice(ind)))$r.squared
+  }
+  
+  slope_list$data <- ts_list
+  slope_list$dens_ch4 <- density(slope_list$slope_ch4, na.rm=T) 
+  slope_list$dens_co2 <- density(slope_list$slope_co2, na.rm=T) 
+  slope_list$dens_max_ch4 <- slope_list$dens_ch4$x[which.max(slope_list$dens_ch4$y)]
+  slope_list$dens_max_co2 <- slope_list$dens_co2$x[which.max(slope_list$dens_co2$y)]
+  slope_list$dens_plot_ch4 <- ggplot(data.frame(slope=slope_list$slope_ch4), aes(slope))+geom_density()+ geom_vline(xintercept=slope_list$dens_max_ch4)
+  slope_list$dens_plot_co2 <- ggplot(data.frame(slope=slope_list$slope_co2), aes(slope))+geom_density()+ geom_vline(xintercept=slope_list$dens_max_co2)
+  
+  xx_ch4 <- slope_list$dens_ch4$x
+  xx_co2 <- slope_list$dens_co2$x
+  dx_ch4 <- xx_ch4[2]-xx_ch4[1]
+  dx_co2 <- xx_co2[2]-xx_co2[1]
+  yy_ch4 <-slope_list$dens_ch4$y
+  yy_co2 <-slope_list$dens_co2$y
+  
+  max_ch4 <- slope_list$dens_max_ch4
+  max_co2 <- slope_list$dens_max_co2
+  
+  C_ch4 <- sum(yy_ch4)*dx_ch4
+  C_co2 <- sum(yy_co2)*dx_co2
+  
+  prob_ch4 <- NULL
+  for(i in 1: length(xx_ch4)){
+    p_ch4 <- (sum(yy_ch4[xx_ch4<= max_ch4 + i*dx_ch4])* dx_ch4)/C_ch4 - (sum(yy_ch4[xx_ch4 <= max_ch4 - i*dx_ch4])*dx_ch4)/C_ch4
+    prob_ch4 <- c(prob_ch4, p_ch4)
+  }
+  
+  prob_co2 <- NULL
+  for(i in 1: length(xx_co2)){
+    p_co2 <- (sum(yy_co2[xx_co2<= max_co2 + i*dx_co2])* dx_co2)/C_co2 - (sum(yy_co2[xx_co2 <= max_co2 - i*dx_co2])*dx_co2)/C_co2
+    prob_co2 <- c(prob_co2, p_co2)
+  }
+  
+  dev_ch4 <- which.min(abs(prob_ch4-0.1)) * dx_ch4
+  dev_co2 <- which.min(abs(prob_co2-0.1)) * dx_co2
+  
+  top_ch4 <- which(slope_list$slope_ch4 > slope_list$dens_max_ch4 - dev_ch4) 
+  top_co2 <- which(slope_list$slope_co2 > slope_list$dens_max_co2 - dev_co2) 
+  bottom_ch4 <- which(slope_list$slope_ch4 < slope_list$dens_max_ch4 + dev_ch4)
+  bottom_co2 <- which(slope_list$slope_co2 < slope_list$dens_max_co2 + dev_co2)
+  
+  int_ch4 <- intersect(top_ch4, bottom_ch4)
+  int_co2 <- intersect(top_co2, bottom_co2)
+  
+  inds_ch4 <- NULL
+  for(i in 1:length(int_ch4)){
+    inds_ch4 <- c(inds_ch4, int_ch4[i]:(int_ch4[i]+num.pts-1))
+  }
+  inds_co2 <- NULL
+  for(i in 1:length(int_co2)){
+    inds_co2 <- c(inds_co2, int_co2[i]:(int_co2[i]+num.pts-1))
+  }
+  
+  highlight_ch4 <- unique(inds_ch4)
+  highlight_co2 <- unique(inds_co2)
+  ts$num <- 1:nrow(ts)
+  
+  slope_list$plot_ch4 <- ts %>% mutate(hl = if_else(num %in% highlight_ch4, "include", "excluded")) %>% 
+    ggplot(aes(secs, moles_CH4))+ geom_point(aes(col=hl)) + scale_color_manual(values=c("black", "green")) + theme(legend.position = "none")
+  
+  
+  slope_list$plot_co2 <- ts %>% mutate(hl = if_else(num %in% highlight_co2, "include", "excluded")) %>% 
+    ggplot(aes(secs, moles_CO2))+ geom_point(aes(col=hl)) + scale_color_manual(values=c("black", "deepskyblue")) + theme(legend.position = "none")
+  
+  return(slope_list)
+} 
+
+calc.slopes.mol <- function(data_df, times_df, time.zone, num.pts=10){
+  flux_list <- list()
+  
+  flux_list$site <- times_df$Location
+  flux_list$location <- times_df$Trap
+  flux_list$start <- times_df$Start
+  flux_list$site_loc <- paste(times_df$Location, times_df$`Trap #`, times_df$Start, sep=" ")
+  flux_list$start <- return.ts(data_df, times_df$Start, time.zone)
+  flux_list$end <- return.ts(data_df, times_df$End, time.zone)
+  
+  data_filt <- list()
+  ch4_plot <- list()
+  co2_plot <- list()
+  
+  for(i in 1:length(flux_list$start)){
+    
+    if(flux_list$start[i]>flux_list$end[i] | is.na(seconds(flux_list$start[i])) | is.na(seconds(flux_list$end[i]))){
+      data_filt[[i]] <- NULL
+      flux_list$s_ch4[i] <- NA
+      flux_list$i_ch4[i] <- NA
+      flux_list$s_co2[i] <- NA
+      flux_list$i_co2[i] <- NA
+      ch4_plot[[i]] <- NULL
+      co2_plot[[i]] <- NULL
+      print(paste0("Timestamp error row ", i))
+    }
+    
+    else{
+      data_filt[[i]] <- data_df %>% filter(date_time > flux_list$start[i], date_time < flux_list$end[i]) %>% 
+        mutate(secs=as.numeric(seconds(date_time)), secs = secs-min(secs))
+      
+      tryCatch(temp <- point.slopes.mol(data_filt[[i]], num.pts), 
+               error=function(e)
+                 print(paste0("error time stamp number:", i)))
+      
+      flux_list$s_ch4[i] <- temp$dens_max_ch4
+      
+      flux_list$s_co2[i] <- temp$dens_max_co2
+      
+      ch4_plot[[i]] <- temp$plot_ch4 + ggtitle(paste0(i, ":", flux_list$site_loc[i], "  ", "\nm = ", round(flux_list$s_ch4[i],4)))
+      
+      co2_plot[[i]] <- temp$plot_co2 + ggtitle(paste0(i, ":", flux_list$site_loc[i], "  ", "\nm = ", round(flux_list$s_co2[i],4)))
+      
+    }
+    
+    
+  }
+  
+  flux_list$data_filt <- data_filt
+  flux_list$ch4_plot <- ch4_plot
+  flux_list$co2_plot <- co2_plot
+  
+  return(flux_list)
+}
+
+return.ts <- function(df, time.stamp, time.zone){
+  ret <-as.POSIXct(rep(NA, length(time.stamp)))
+  for(i in 1:length(time.stamp)){
+    temp <- df %>% dplyr::filter(floor_date(date_time)==floor_date(ymd_hms(time.stamp[i], tz = time.zone)))
+    ret[i] <- temp %>% slice(n()) %>% pull(date_time)
+  }
+  return(ret)
+}
+```
+
+## Quickly and interactively visualize the time series 
+
+Drag cursor to zoom in. Double click to zoom out
+
+```{r visualize raw timeseries}
+# ch4_ts <- as.xts(data$CH4_dry, order.by=data$date_time)
+# co2_ts <- as.xts(data$CO2_dry, order.by=data$date_time)
+# 
+# dygraph(ch4_ts, main="CH4") %>%
+#   dyOptions(useDataTimezone = TRUE)
+# 
+# dygraph(co2_ts) %>%
+#   dyOptions(useDataTimezone = TRUE)
+```
+
+## Convert ppm CH4 to moles
+```{r}
+# join flux and temperature data frames 
+data <- data %>% 
+  mutate(date_time_sec = round_date(date_time, unit="second"), 
+         date_time_min = round_date(date_time, unit = "minute")) %>% 
+  left_join(temp_data, by="date_time_sec") %>% 
+  left_join(baro, by = "date_time_min") %>% 
+  
+  left_join(water_temp, by = "date_time_min") %>% 
+  distinct() %>% 
+  mutate(rho = water.density(water_temp)) %>% 
+  mutate(row_num = row_number())
+  
+
+# give each flux measurement a uniqueID
+data$measure_num <- NA
+
+for(i in 1:length(times$Start)){
+  temp_start <- times$Start[i]
+  temp_end <- times$End[i]
+  
+  inds <- data %>% filter(date_time > temp_start & date_time < temp_end) %>% pull(row_num)
+  data$measure_num[inds] <- i
+}
+
+data <- data %>% 
+  #filter(is.na(measure_num)==F) %>% 
+  group_by(measure_num) %>% 
+  mutate(secs=as.numeric(seconds(date_time)), secs = secs-min(secs)) %>% 
+  mutate(volume = volume_calc(secs)+7.317433e-05, p2= pressure_calc(secs, Barometer, rho)) %>% # added volume from tubing
+  mutate(moles_CH4 = CH4_dry * 1e-6 * ((volume * p2) / (8.314462 * temp_k)), 
+         moles_CO2 = CO2_dry * 1e-6 * ((volume * p2) / (8.314462 * temp_k)))
+```
+
+
+
+## Visualize and calculate slopes
+
+(This description is out of date and descripes the old version of this function) The function `calc.slopes()` returns a list with the calculated slopes between the start and end times specified by the user in a data frame, excluding some percentage of the data at the beginning of the time series, which is specified by the user. Because the times recorded by the user may not correspond to timestamps recorded by the analyzer, this function calls `return.ts()` which returns the closest recorded timestamp in the flux data file to the user specified time stamp. The list also contains plots of the fluxes for the user to manually inspect which data points are included in the slope calculation. Users should note the number at the beginning of the plot titles for the calculations they are unsatisfied with, because these numbers correspond to the index of that flux in the list returned by `calc.slopes()` and can be used in the function `shiny_edit()` to interactively select the portion of the time series used to calculate the slope. `calc.slopes()` will return a row index for every time step in which either the start time or end time is missing or the end time is before the start time.
+
+* *data_df:* the data frame containing the output from the analyzer
+* *times_df:* the data frame containing the times specified by the user as the start and end time of the flux measurements
+* *time.zone:* time zone of recorded dates
+* *perc_cut:* what percentage of the observations to cut from the slope calculation to account for any initial equilibration within the analyzer
+
+```{r calculate slopes}
+# This function takes a while to run
+flux_list <- calc.slopes.mol(data, times, "America/New_York", 10)
+
+
+#make pdfs of default plots
+pdf("../../1-Raw Data/flux/flux_plots/Pick_20220620_ch4_plots.pdf", paper="a4", width=9, height=12)
+marrangeGrob(grobs=compact(flux_list$ch4_plot), nrow=3, ncol=2)
+dev.off()
+# 
+pdf("../../1-Raw Data/flux/flux_plots/Pick_20220620_co2_plots.pdf", paper="a4", width=9, height=12)
+marrangeGrob(grobs=compact(flux_list$co2_plot), nrow=3, ncol=2)
+dev.off()
+```
+## Calculate fluxes 
+
+The function `read.temp()` loads and formats temperature data files listed in a vector containing the file paths for desired temperature files, such as the output from `file.finder()`. Note: if the slope for the flux was calculated from a subset of the data, this function does not subset the temperature time series
+
+* *temp_files:* vector containing the file paths for desired flux files
+* *time.zone:* time zone of date times in flux files (complete list available with `OlsonNames()`)
+
+The function `add.temps()` calculates the average temperature during each flux measurement specified by the user and appends them to the flux list. 
+
+ list containing the calculated slopes for each flux measurement, such as the output from `calc.slopes()`
+* *temp_data:* data frame containing formatted temperature data, such as the output from `read.temp()`
+* *perc_cut :* what percentage of the observations to cut from the slope calculation to account for any initial equilibration within the analyzer
+
+The function `calc_flux()` calculates gas flux from the calculated CH4 and CO2 slopes (e.g., the output of `calc.slopes()` edited by `shiny_edit()`), measured chamber temperature, chamber and accessory volumes using the ideal gas law. This function returns a data frame which can be exported using the write functions. 
+
+* *flux_list:* the list containing the flux data, slopes, and intercepts (e.g., the output from `calc.slopes()`)
+* *width:* chamber width in meters
+* *length:* chamber length in meters
+* *height:* chamber height in meters
+* *add_vol:* additional system volume (e.g., volume inside the analyzer and tubing) in cubic meters
+
+```{r flux calculation, warning=FALSE}
+
+calc_flux <- function(flux_list, width, length){
+  
+  flux_ch4_mol <- NULL
+  flux_ch4_g <- NULL
+  flux_co2_mol <-NULL
+  flux_co2_g <- NULL
+  
+  for(i in 1:length(flux_list$site_loc)){
+    s_ch4 <- flux_list$s_ch4[i]
+    s_co2 <- flux_list$s_co2[i]
+   
+    a <- width * length
+
+    
+    flux_ch4_mol <- c(flux_ch4_mol, (s_ch4*86400 * 1e3)/a) # edited from 3600 to 86400 *1e3 to try to harmonize with other function which returns mmol/m2 day 7/25/23
+    flux_co2_mol <- c(flux_co2_mol,(s_co2*86400 * 1e3)/a)
+  }
+  
+  flux_ch4_g <- map_dbl(flux_ch4_mol, ~.x * 1e-3 * 16.04) # edited to add 1e-3 to reflect mmol to mol 7/25/23
+  flux_co2_g <- map_dbl(flux_co2_mol, ~.x * 1e-3 * 44.01)
+  
+  
+  ret <- data.frame("site" = flux_list$site, "location" = flux_list$location, "start_time"=flux_list$start, "flux_ch4_mmol"=flux_ch4_mol, "flux_ch4_g"=flux_ch4_g, "flux_co2_mmol"=flux_co2_mol, "flux_co2_g"=flux_co2_g)
+  return(ret)
+}
+
+# to quickly visualize the temperature data uncomment the following lines
+
+# temp_ts <- as.xts(temp_data$temp, order.by=temp_data$date_time)
+# dygraph(temp_ts, main="temp") %>%
+#   dyOptions(useDataTimezone = TRUE)
+
+fluxes <- calc_flux(flux_list, width=0.3429, length=0.3429) 
+
+fluxes <- fluxes %>% mutate(temporary = hm(paste(hour(start_time), minute(start_time), sep = ":"))) %>% left_join(times %>% mutate(temporary = hm(paste(hour(Start), minute(Start), sep = ":"))) %>% select(trip, temporary),by=c("temporary")) %>% select(-temporary)
+
+file_name <- "../../1-Raw Data/flux/processed-flux/Pick_20220620_Fluxes.csv"
+write.csv(fluxes, file_name , row.names = F)
+```
+

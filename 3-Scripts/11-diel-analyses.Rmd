@@ -1,0 +1,216 @@
+# Analyses of patterns of diel diffusive emissions
+
+```{r diel setup, include=FALSE}
+par <- site_rename(read.csv("../2-Clean Data/par.csv") %>% mutate(Date_Time = mdy_hm(time_et, tz = "America/New_York")) %>% select(Date_Time, site, cal_corr) %>% rename("par" = "cal_corr"))
+ws <- site_rename(date_to_sampling(read.csv("../2-Clean Data/windspeeds.csv") %>% mutate(date = ymd(date))))
+lux <- sampling_filter_24hr(site_rename(read.csv("../2-Clean Data/lux.csv") %>% mutate(Date_Time = ymd_hms(Date_Time, tz = "America/New_York")) %>% distinct()))
+
+time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
+
+diffusion_env <- site_rename(diffusion) %>% 
+  left_join(lux, time_join)%>% 
+  select(site, location, start_time, trip, flux_ch4_g_hr, flux_co2_g_hr, Lux) 
+
+time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
+
+diffusion_env <- diffusion_env %>% left_join(top_temp, time_join) %>% distinct()
+
+diffusion_env <- diffusion_env %>% 
+  left_join(ws %>% mutate(sampling = case_when(
+    sampling == "Catfish 9/6 - 9/7" ~ "Catfish 06-07 Sept",
+    sampling == "Catfish 9/18 - 9/19" ~ "Catfish 18-19 Sept",
+    sampling == "Deans 8/16 - 8/17" ~ "Deans 16-17 Aug",
+    sampling == "Deans 8/30 - 8/31"  ~ "Deans 30-31 Aug",
+    sampling == "Blue Herron 9/13 - 9/14"  ~ "Blue Herron 13-14 Sept",
+    sampling == "Sister 8/22 - 8/23" ~ "Sister 22-23 Aug"
+  )) %>% select(-date, -site), by = c("sampling", "location", "trip")) %>% 
+drop_na()
+  
+time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
+diffusion_env <- diffusion_env %>% left_join(par, time_join)
+```
+
+## Diel patterns in environmental variables
+```{r env var plots}
+lux_daily <- sampling_filter_24hr(lux) %>% filter(is.na(sampling)==F)
+
+time_vec <- c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00")
+date_time_vec_1 <- do.call(c, map(time_vec[1:5], function(x) ymd_hm(paste(date(Sys.time()), x, sep = " "), tz = "America/New_York")))
+date_time_vec_2 <- do.call(c, map(time_vec[6:8], function(x) ymd_hm(paste(date(Sys.time()+days(1)), x, sep = " "), tz = "America/New_York")))
+date_time_vec <- c(date_time_vec_1, date_time_vec_2)
+
+lux_plot <- daily_trace_aes(lux_daily %>% 
+     mutate(time = format(Date_Time, format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(0:9), time + days(1), time)) %>% 
+  ggplot(aes(time_alt, Lux, group = sampling)) +
+  geom_line()+
+    scale_y_continuous(labels = label_scientific(digits = 1, trim = TRUE))+
+  ylab("Lux"), date_time_vec)
+
+# ws plot
+ws_plot <- daily_trace_aes(diffusion_env %>% 
+  filter(is.na(ws_mean)==F, is.na(sampling)==F) %>% 
+  mutate(time = format(start_time, format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(0:9), time + days(1), time)) %>% 
+  ggplot(aes(time_alt, ws_mean, group = sampling))+
+    scale_y_continuous(labels = label_number(accuracy = 0.01))+
+  geom_point()+
+  ylab("Windspeed (m/s)"), date_time_vec)
+
+# temp plot
+temp_daily <- sampling_filter_24hr(top_temp %>% distinct()) %>% filter(is.na(sampling)==F)
+
+temp_plot <- daily_trace_aes(top_temp %>% 
+  filter(is.na(temp)==F, is.na(sampling)==F) %>% 
+  mutate(time = format(Date_Time, format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(0:9), time + days(1), time)) %>% 
+  ggplot(aes(time_alt, temp, group = sampling))+
+  geom_line()+
+  ylab(expression("Temperature 0.25 m ("*~degree*C*")")), date_time_vec)
+
+# par plot
+
+par_daily <- sampling_filter_24hr(par) %>% filter(is.na(sampling)==F)
+
+par_plot <- daily_trace_aes(par_daily %>% 
+  filter(is.na(par)==F, is.na(sampling)==F) %>% 
+  mutate(time = format(Date_Time, format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(0:9), time + days(1), time)) %>% 
+  ggplot(aes(time_alt, par, group = sampling))+
+  geom_line()+
+  ylab(expression(PAR~0.25~m~(mu~mol~m^-2~s^-1))), date_time_vec)
+
+# DO plot
+
+do_plot <- daily_trace_aes(do %>% filter(location == "Top") %>% mutate(site = if_else(site == "Pick", "Blue Herron", site)) %>% 
+  filter(is.na(sampling)==F) %>% 
+     mutate(time = format(Date_Time, format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(24, 0:9), time + days(1), time)) %>% 
+  ggplot(aes(time_alt, DO_mgL, group = sampling)) +
+  geom_line()+
+    scale_y_continuous(labels = label_number(accuracy = 0.01))+
+  ylab("DO (mg/L)"), date_time_vec)
+```
+
+
+### Discrete Dissolved oxygen 
+```{r ysi do}
+ysi <- read.csv("../2-Clean Data/ysi_all.csv") %>% mutate(sampling = case_when(
+  sampling == "Catfish1" ~ "Catfish 06-07 Sept",
+  sampling == "Catfish2" ~ "Catfish 18-19 Sept",
+  sampling == "Deans1" ~ "Deans 16-17 Aug",
+  sampling == "Deans2" ~ "Deans 30-31 Aug",
+  sampling == "Pick1" ~ "Blue Herron 13-14 Sept",
+  sampling == "Sister31" ~ "Sister 22-23 Aug"
+)) %>% rename("site" = "Location", "location"="Trap..", "trip"= "Trip") %>% 
+  mutate(do = as.numeric(value), time = format(ymd_hms(date_time), format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(24, 0:9), time + days(1), time)) %>% 
+  mutate(do = replace(do, X == 2371, 4.59), do = replace(do, X==2707, 5.91), do = replace(do, X == 1832, NA), do = replace(do, X==852, 5.86)) 
+
+diffusion_env <- diffusion_env %>%  left_join(ysi %>% filter(name == "YSI Bottom DO mg/L" | name == "YSI Top DO mg/L") %>% select(sampling, location, trip, name, do) %>%  pivot_wider(id_cols = c(sampling, location, trip), names_from = name, values_from = do) %>% group_by(sampling, trip) %>% summarize(mean_top_do = mean(`YSI Top DO mg/L`, na.rm = T), mean_bottom_do = mean(`YSI Bottom DO mg/L`, na.rm = T)) , by = c("sampling", "trip")) %>% mutate(start_date = case_when(
+  sampling == "Catfish 06-07 Sept" ~ ymd("2022-09-06"),
+  sampling == "Catfish 18-19 Sept" ~ ymd("2022-09-18"),
+  sampling == "Deans 16-17 Aug" ~ ymd("2022-08-16"),
+  sampling == "Deans 30-31 Aug" ~ ymd("2022-08-30"),
+  sampling == "Blue Herron 13-14 Sept" ~ ymd("2022-09-13"),
+  sampling == "Sister 22-23 Aug" ~ ymd("2022-08-23")
+))
+```
+
+```{r ysi summary}
+# pH at Deans on August 16-17 was not properly calibrated
+ysi_summary <- ysi %>% filter(name %in% c("YSI Bottom DO mg/L", "YSI Top DO mg/L", "YSI Bottom pH", "YSI Top pH", "YSI Bottom Temp", "YSI Top Temp")) %>% group_by(sampling, name) %>% summarize(mean = mean(do, na.rm = T) %>% round(1), sd = sd(do, na.rm = T) %>% round(1), min = min(do, na.rm =T), max = max(do, na.rm = T)) %>% filter(!(sampling == "Deans 16-17 Aug" & str_detect(name, "pH")))
+
+ysi_6.20_7.12 <- read.csv("../2-Clean Data/ysi_620.712.csv")
+```
+
+
+## CH4 models
+```{r model selection }
+ch4_all <- lmer(flux_ch4_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + (1|sampling), data = diffusion_env, na.action = "na.fail")
+
+ch4_int <- lmer(flux_ch4_g_hr ~ (1|sampling), data = diffusion_env, na.action = "na.fail")
+ch4_do <- lmer(flux_ch4_g_hr ~ mean_top_do + (1|sampling), data = diffusion_env, na.action = "na.fail")
+ch4_temp <- lmer(flux_ch4_g_hr ~ temp + (1|sampling), data = diffusion_env, na.action = "na.fail")
+```
+
+With PAR
+```{r}
+diffusion_env_par <- diffusion_env %>% filter(is.na(par)==F)
+ch4_all_par <- lmer(flux_ch4_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + scale(par) + (1|sampling), data = diffusion_env_par, na.action = "na.fail")
+
+dredge(ch4_all_par)
+ch4_par <- lmer(flux_ch4_g_hr ~ par + (1|sampling), data = diffusion_env_par, na.action = "na.fail")
+summary(ch4_par)
+```
+
+## CO2 models
+### Multiple predictors
+```{r co2 all pred}
+co2_all <- lmer(flux_co2_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + (1|sampling), data = diffusion_env, na.action = "na.fail")
+dredge(global.model = co2_all)
+
+co2_sdo <- lmer(flux_co2_g_hr ~ mean_top_do + (1|sampling), data = diffusion_env, na.action = "na.fail")
+r2_nakagawa(co2_sdo)
+summary(co2_sdo)
+
+co2_intercept <- lmer(flux_co2_g_hr ~ (1|sampling), data = diffusion_env, na.action = "na.fail")
+summary(co2_intercept)
+
+co2_temp <- lmer(flux_co2_g_hr ~ temp + (1|sampling), data = diffusion_env, na.action = "na.fail")
+r2_nakagawa(co2_temp)
+summary(co2_temp)
+
+co2_temp_nbh <- lmer(flux_co2_g_hr ~ temp + (1|sampling), data = diffusion_env %>% filter(site != "Blue Herron"), na.action = "na.fail")
+r2_nakagawa(co2_temp_nbh)
+summary(co2_temp_nbh)
+
+co2_temp_do_top <- lmer(flux_co2_g_hr ~ mean_top_do + temp + (1 | sampling), data = diffusion_env, na.action = "na.fail")
+summary(co2_temp_do_top)
+r2_nakagawa(co2_temp_do_top)
+
+co2_do_do <- lmer(flux_co2_g_hr ~ mean_bottom_do + mean_top_do + (1 | sampling), data = diffusion_env, na.action = "na.fail")
+summary(co2_do_do)
+r2_nakagawa(co2_do_do)
+```
+
+
+
+```{r env mod figs}
+pred.ch4.do <- ggpredict(ch4_do, terms =c("mean_top_do", "sampling"), type = "random") 
+
+facet.lab <- c("Blue Herron\n13-14 Sept", "Catfish\n06-07 Sept", "Catfish\n18-19 Sept", "Deans\n16-17 Aug","Deans\n30-31 Aug", "Sister\n22-23 Aug")
+names(facet.lab) <- c("Blue Herron 13-14 Sept", "Catfish 06-07 Sept", "Catfish 18-19 Sept", "Deans 16-17 Aug","Deans 30-31 Aug", "Sister 22-23 Aug")
+
+ch4_diff_do <- ggplot(pred.ch4.do) + 
+  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_ch4_g_hr, group = group))+ 
+  geom_line(aes(x=x, y=predicted))+
+  facet_grid(~group, labeller = labeller(group = facet.lab))+
+  ylab(expression(Diffusive ~ CH[4]~ flux ~ (g~m^-2~hr^-1)))+
+  xlab("Dissolved Oxygen (mg/L)")+
+  theme_bw()+ 
+  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
+
+pred.co2.temp <- ggpredict(co2_temp, terms =c("temp", "sampling"), type = "random") 
+
+co2_diff_temp <- ggplot(pred.co2.temp) + 
+  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(temp, flux_co2_g_hr, group = group))+ 
+  geom_line(aes(x=x, y=predicted))+
+  facet_grid(~group, labeller = labeller(group = facet.lab))+
+  ylab(expression(Diffusive ~ CO[2]~ flux ~ (g~m^-2~hr^-1)))+
+  scale_x_continuous(breaks = c(20,24,28))+
+  xlab("Temperature (°C)")+
+  theme_bw()+ 
+  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
+
+pred.co2.do <- ggpredict(co2_sdo, terms =c("mean_top_do", "sampling"), type = "random") 
+
+co2_diff_do <- ggplot(pred.co2.do) + 
+  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_co2_g_hr, group = group))+ 
+  geom_line(aes(x=x, y=predicted))+
+  facet_grid(~group, labeller = labeller(group = facet.lab))+
+  ylab(expression(Diffusive ~ CO[2]~ flux ~ (g~m^-2~hr^-1)))+
+  xlab("Dissolved Oxygen (mg/L)")+
+  theme_bw()+ 
+  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
+
+```
+
+

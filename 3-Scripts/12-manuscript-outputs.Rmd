@@ -1,0 +1,460 @@
+---
+title: "manuscript-outputs"
+author: "L. Naslund"
+date: "2023-07-24"
+output: html_document
+---
+# Methods
+Site description table
+```{r site area km2}
+st_area(deans) %>% as.numeric() *1e-6
+st_area(catfish) %>% as.numeric() *1e-6
+st_area(sister3) %>% as.numeric() *1e-6
+st_area(pick) %>% as.numeric() *1e-6
+
+res_time
+
+ysi_summary %>% pivot_wider(id_cols = sampling, names_from = name, values_from =  c(mean, sd))
+
+ysi_6.20_7.12
+```
+
+# Results
+Pathways P1: Summary of fluxes
+```{r}
+# range of CO2-eq fluxes
+range(co2_eq_summary$total_co2_eq)
+
+# pathways contributing the most CO2-eq flux on each sampling and the proportions of pathway contributions to total flux
+co2_eq_summary
+
+# degassing contributions
+bh_conc <- 98.66104183 -0.36507263	
+bh_q_0913 <- 4/c(270, 214, 245)
+bh_degas <- bh_conc * mean(bh_q_0913) * 86400 * 1e-6 *16.04 *(1/as.numeric(st_area(pick)))
+bh_degas
+bh_degas*27
+((bh_degas)/(co2_eq_summary %>% filter(site == "Pick") %>% pull(total_co2_eq))) *100
+
+
+deans1_conc <- 0.58316848-0.31061833
+deans_q_0817 <- 4/c(13.85,13.8,13.37)
+deans_degas <- deans1_conc * mean(deans_q_0817) * 86400 * 1e-6 *16.04 *(1/as.numeric(st_area(deans)))
+deans_degas
+deans_degas * 27
+(deans_degas / (co2_eq_summary %>% filter(site == "Pick") %>% pull(total_co2_eq)))*100
+```
+
+Pathways P2: Summary of DO during sampling
+```{r summary sampling do, echo = F}
+do %>% filter(location == "Top") %>% 
+  mutate(site = if_else(site == "Pick", "Blue Herron", site)) %>% 
+  filter(is.na(sampling)==F) %>% 
+  group_by(site) %>% 
+  summarize(min_do = min(DO_mgL), max_do = max(DO_mgL), mean_do = mean(DO_mgL))
+```
+
+Pathways P2: Range of pathways 
+```{r}
+range(summary_pathways$flux_round_diffusion_CO2)
+range(summary_pathways$flux_round_diffusion_CH4)
+range(summary_pathways$flux_round_ebullition_CH4)
+```
+
+Times P1: Environmental variables CH4 diffusion
+```{r all CH4 models}
+dredge(global.model = ch4_all)
+summary(ch4_do)
+r2_nakagawa(ch4_do)
+
+summary(ch4_temp)
+r2_nakagawa(ch4_temp)
+
+summary(ch4_int)
+```
+
+Times P2: Environmental variables CO2 diffusion
+```{r all CO2 models}
+dredge(global.model = co2_all)
+
+r2_nakagawa(co2_sdo)
+summary(co2_sdo)
+
+summary(co2_intercept)
+
+r2_nakagawa(co2_temp)
+summary(co2_temp)
+
+r2_nakagawa(co2_temp_nbh)
+summary(co2_temp_nbh)
+```
+
+Times P3: Effect of sunny v cloudy conditions
+```{r sunny v cloudy}
+summary(suncloud.mod.ch4)
+summary(suncloud.mod.co2)
+```
+
+Locations P1: Spatial pattern of ebullition 
+```{r sp eb}
+summary(mod7)
+r2_nakagawa(mod7)
+
+# no Blue Herron
+summary(mod7.d)
+r2_nakagawa(mod7.d)
+1-exp(mod7.d@beta)
+
+# Moran's I for Blue Herron
+diff_moran %>% filter(site == "Blue Herron", p.value < 0.05, gas == "CO2") %>% arrange(observed)
+```
+
+Simulations P1: Consequences of limited sampling locations
+```{r}
+space_sims_combos %>% mutate(perc = 100* (co2_eq_diff/calc_co2_eq) ) %>% summarize(range = range(co2_eq_diff), range_perc = range(perc))
+```
+
+
+Simulations P2: Consequences of limited sampling
+```{r}
+# how wrong are you sampling one times 
+time_combos %>% filter(ord1 == ord2) %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
+
+# times that minimize cumulative CO2 diffusion estimation error for sites other than Blue Herron
+time_combos %>% filter(site != "Blue Herron") %>% mutate(co2_diffusion_difference_abs = abs(co2_diffusion_difference)) %>% group_by(ord1, ord2) %>% summarize(misestimate_sum = sum(co2_diffusion_difference_abs)) %>% arrange(misestimate_sum) %>% mutate(time = if_else((ord1 %in% c(1:3) & ord2 %in% c(4:7)), "day_night", "not"))
+
+# median and max CO2 error
+time_combos %>% filter(site != "Blue Herron") %>% mutate(co2_diffusion_difference_abs = abs(co2_diffusion_difference)) %>% summarize(median = median(co2_diffusion_difference_abs), min = min(co2_diffusion_difference), max = max(co2_diffusion_difference))
+
+# percent of flux max error
+time_combos %>% filter(site != "Blue Herron") %>% arrange(co2_diffusion_difference) %>% slice(1) %>% mutate(perc = (co2_diffusion_difference)/flux_round_diffusion_CO2) %>% pull(perc)
+
+# diel variation in Ch4 diffusion
+date_to_sampling(diffusion) %>% filter(!(sampling %in% c("Blue Herron 9/13 - 9/14", NA))) %>% group_by(sampling) %>% summarize(range = max(flux_ch4_g_hr)- min(flux_ch4_g_hr))
+
+#median and max ch4 error
+time_combos %>% filter(site != "Blue Herron") %>% mutate(ch4_diffusion_difference_abs = abs(ch4_diffusion_difference)) %>% summarize(median = median(ch4_diffusion_difference_abs), min = min(ch4_diffusion_difference), max = max(ch4_diffusion_difference))
+
+# percent of flux max error 
+time_combos %>% filter(site != "Blue Herron")  %>% mutate(ch4_diffusion_difference_abs = abs(ch4_diffusion_difference)) %>% arrange(desc(ch4_diffusion_difference_abs)) %>% slice(1) %>% mutate(perc = (ch4_diffusion_difference)/flux_round_diffusion_CH4) %>% pull(perc)
+
+# times that minimize cumulative CH4 diffusion estimation error for sites other than Blue Herron
+time_combos %>% filter(site != "Blue Herron") %>% mutate(ch4_diffusion_difference_abs = abs(ch4_diffusion_difference)) %>% group_by(ord1, ord2) %>% summarize(misestimate_sum = sum(ch4_diffusion_difference_abs)) %>% arrange(misestimate_sum) %>% mutate(time = if_else((ord1 %in% c(1:3) & ord2 %in% c(4:7)), "day_night", "not"))
+```
+
+Simulations P3: Consequences of limited sampling
+```{r}
+# minimize error for CO2 diffusion
+time_combos %>% filter(site == "Blue Herron") %>% mutate(co2_diffusion_difference_abs = abs(co2_diffusion_difference)) %>% arrange(co2_diffusion_difference_abs) %>% mutate(time = if_else((ord1 %in% c(1:3) & ord2 %in% c(4:7)), "day_night", "not")) %>% mutate(perc_co2_diff = 100*(co2_diffusion_difference/flux_round_diffusion_CO2))
+
+# consequences of sampling at 10 AM
+time_combos %>% filter(site == "Blue Herron", ord1 == 1, ord2 == 1) %>% mutate(co2_diffusion_difference_abs = abs(co2_diffusion_difference))  %>% mutate(perc = co2_diffusion_difference/flux_round_diffusion_CO2)
+
+# minimize error for CH4 diffusion
+time_combos %>% filter(site == "Blue Herron") %>% mutate(ch4_diffusion_difference_abs = abs(ch4_diffusion_difference)) %>% arrange(ch4_diffusion_difference_abs) %>% mutate(time = if_else((ord1 %in% c(1:3) & ord2 %in% c(4:7)), "day_night", "not")) %>% mutate(perc = 100*(ch4_diffusion_difference/flux_round_diffusion_CH4))
+
+```
+
+
+# Discussion
+
+P1: Limited sampling consequences
+```{r limited sampling consequences}
+# how wrong are you without ebullition 
+co2_eq_summary %>% select(site, date, ebullition_CH4, without_eb) %>% arrange(without_eb)
+
+# how wrong are you sampling one times 
+time_combos %>% filter(ord1 == ord2) %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
+
+# how wrong are you by sampling one to four locations
+space_sims_combos  %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
+
+space_sims_combos  %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq))
+head(space_sims_combos)
+```
+
+P1: Wolffia reservoir vs other reservoirs
+```{r}
+# relative total co2 eq emissions
+wolffia_co2_eq <- co2_eq_summary %>% filter(site == "Pick") %>% pull(total_co2_eq)
+co2_eq_summary %>% mutate(compare_wolffia = wolffia_co2_eq/total_co2_eq)  %>% filter(site != "Pick") %>% summarize(avg_comparison = mean(compare_wolffia))
+
+# percentage co2 eq emissions from CH4 emissions at Blue Herron
+co2_eq_summary %>% filter(site == "Pick") %>% pull(prop_ch4)
+```
+
+Temporal and spatial patterns P1: Windspeed
+```{r}
+range(ws$ws_mean, na.rm =T)
+mean(ws$ws_mean, na.rm = T)
+```
+
+Temporal and spatial patterns P2: Surface DO and CH4 diffusion
+```{r}
+r2_nakagawa(ch4_do)
+```
+
+Magnitude of emissions P1: Mean emissions
+```{r}
+summary_pathways %>% mutate(ch4 = flux_round_diffusion_CH4 + flux_round_ebullition_CH4) %>% summarize(avg_co2 = mean(flux_round_diffusion_CO2), avg_ch4 = mean(ch4))
+
+summary_pathways %>% filter(site == "Pick") %>% select(site, flux_round_diffusion_CH4, flux_round_ebullition_CH4)
+```
+
+Magnitude of emissions P3: Estimating all ponds emissions
+```{r total emission car comparison}
+# kg CO2 eq if all reservoirs are green
+clarke_area * 1e6 * green_avg * 1e-3
+
+# kg co2 eq if none of the reservoirs are green
+clarke_area * 1e6 * not_green_avg * 1e-3
+
+# plug resulting kg of CO2-eq emissions into EPA calculator https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator#results
+```
+
+
+# Main Text Figures
+
+Figure 1: Summary of contribution of different pathways to total CO2-eq flux
+```{r pathways summary fig, echo = F}
+png(filename = "../4-Figures/co2-eq-summary.png", width = 8, height = 5, units = "in", res = 300)
+all_fluxes_pathways %>% 
+  mutate(flux_mean_g_m2_day_co2_eq =  flux_mean_g_day_co2_eq/area,
+         flux_2.5_g_m2_day_co2_eq= flux_2.5_g_day_co2_eq/area, 
+         flux_97.5_g_m2_day_co2_eq= flux_97.5_g_day_co2_eq/area, 
+         pathway_gas = paste(pathway, gas, sep = " ") %>% as.factor() %>% fct_relevel("diffusion CO2", after = 0), 
+         site_date = paste(site, date, sep = " ")) %>% 
+  ggplot(aes(site_date, flux_mean_g_m2_day_co2_eq, fill = pathway_gas)) + 
+  geom_bar(position = position_dodge(), stat = "identity")+
+  scale_x_discrete(labels = c("Catfish 09/06/22" = "Catfish 06 Sept", "Catfish 09/18/22" = "Catfish 18 Sept", "Deans 08/16/22" = "Deans 16 Aug", "Deans 08/30/22" = "Deans 30 Aug", "Pick 09/13/22" = "Blue Herron 13 Sept", "Sister3 08/22/22" = "Sister 22 Aug"))+
+  geom_errorbar(aes(ymax=flux_97.5_g_m2_day_co2_eq, ymin=flux_2.5_g_m2_day_co2_eq), position = position_dodge())+
+  scale_fill_manual(values = c("#BFDBC0","#94A7C5", "#3D5170"), labels = c(expression(diffusion~CO[2]), expression(diffusion~CH[4]), expression(ebullition~CH[4])))+
+  ylab(expression(CO[2]-equivalent ~ flux ~ (g~m^-2~day^-1)))+
+  theme_bw()+
+  theme(legend.text.align = 0, axis.title.x = element_blank(), legend.title = element_blank(), axis.text.x = element_text(angle=45, hjust=1), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), legend.text = element_text(size = 14))
+dev.off()
+```
+
+Figure 2: Diel patterns of emissions
+```{r knit diel figs, echo = F}
+png(filename = "../4-Figures/diel-patterns.png", width = 7.5, height = 11.5, units = "in", res = 300)
+plot_grid(co2_diel, ch4_diel, eb_diel, ncol = 1, labels = "AUTO", label_size = 18, vjust = 1.3)
+dev.off()
+```
+
+Figure 3: Iterative site number consequences
+```{r fig 3}
+png(filename = "../4-Figures/interate_space.png", width = 8, height = 12, units = "in", res = 300)
+plot_grid(iterate_space, iterate_space_legend, ncol = 2, rel_widths = c(0.7, 0.3))
+dev.off()
+```
+
+Figure 4: Heat map different sampling times
+```{r fig 4}
+png(filename = "../4-Figures/diffusion_heatmaps.png", width = 9, height = 11.5, units = "in", res = 300)
+plot_grid(co2_diff_hm, ch4_diff_hm, ncol = 1, labels = "AUTO", label_size = 18)
+dev.off()
+```
+
+
+# Supplement Figures
+Figure S1: Inset map
+```{r si 1}
+plot_usmap(include = c("GA", "AL", "SC", "FL"))
+
+athens <- data.frame(lon = -83.360351, lat = 33.884606)
+athens_trans <- usmap_transform(athens)
+
+png(filename = "../4-Figures/inset.png", width = 12, height = 5, units = "in", res = 300)
+plot_usmap(include = c("GA", "AL", "SC", "FL")) + 
+  geom_point(data = athens_trans, 
+             aes(x = x, y = y), 
+             color = "black",
+             size = 3)
+dev.off()
+```
+
+Figure S2: Sunny vs. cloudy day fluxes
+```{r}
+png(filename = "../4-Figures/sunny-cloudy.png", width = 12, height = 5, units = "in", res = 300)
+plot_grid(sc_ch4 + theme(legend.position = "none"), sc_co2+ theme(legend.position = "none"), sc_legend, rel_widths = c(0.425,0.425, 0.15), nrow = 1)
+dev.off()
+```
+
+Figure S3
+```{r}
+png(filename = "../4-Figures/daily_traces.png", width = 11, height = 12, units = "in", res = 300)
+plot_grid(do_plot, lux_plot, ws_plot, temp_plot, par_plot, ncol = 2, labels = "AUTO", label_size = 18, align = "hv")
+dev.off()
+```
+
+Figure S4: Two week DO trace
+```{r do time series, echo = F}
+anno <- data.frame(
+  x1 = c(ymd_hms("2022-09-06 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-09-18 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-16 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-30 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-09-13 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-22 08:00:00", tz = "America/New_York") ),
+  x2 = c(ymd_hms("2022-09-07 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-09-19 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-17 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-31 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-09-14 08:00:00", tz = "America/New_York"), 
+         ymd_hms("2022-08-23 08:00:00", tz = "America/New_York")),
+  y1 = c(rep(0,6)),
+  y2 = c(rep(11,6)),
+  site = c("Catfish", "Catfish", "Deans", "Deans", "Blue Herron", "Sister"))
+
+do_crop <- do %>% filter(location == "Top") %>% 
+  filter(Date_Time > ymd_hms("2022-08-01 08:00:00"), Date_Time < ymd_hms("2022-09-30 08:00:00"))
+
+png(filename = "../4-Figures/do-all-summary.png", width = 8, height = 7, units = "in", res = 300)
+ggplot() +
+   geom_rect(data = anno, aes(xmin = x1, xmax = x2, ymin = y1, ymax = y2), fill = "#a3cdff", alpha = 0.5)+
+  geom_line(data = do_crop, aes(Date_Time, DO_mgL))+
+  theme_bw()+
+  ylab("DO (mg/L)") + 
+  theme(axis.title.x = element_blank(), axis.text = element_text(size = 14, color = "black"), 
+        axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))+
+  facet_grid(rows = vars(site))
+dev.off()
+```
+
+Figure S5: Relationship between diffusive flux of CH4 and surface DO
+```{r}
+png(filename = "../4-Figures/do-ch4.png", width = 8, height = 4, units = "in", res = 300)
+ch4_diff_do
+dev.off()
+```
+
+Figure S6: Diel patterns of CO2 diffusion without Blue Herron
+```{r co2 no bh}
+png(filename = "../4-Figures/co2-diffusion-no-blue-herron.png", width = 9, height = 5, units = "in", res = 300)
+co2_diel_no_bh
+dev.off()
+```
+
+Figure S7: Relationship between diffusive flux of CO2 and surface DO
+```{r}
+png(filename = "../4-Figures/do-co2.png", width = 8, height = 4, units = "in", res = 300)
+co2_diff_do
+dev.off()
+```
+
+
+Figure S8: Relationship between diffusive flux of CO2 and water temperature
+```{r}
+png(filename = "../4-Figures/do-temp.png", width = 8, height = 4, units = "in", res = 300)
+co2_diff_temp
+dev.off()
+```
+
+
+Figure S9: Raw values map CO2
+```{r}
+png("../4-Figures/point_maps_co2.png", width = 12, height = 15, units = "in", res = 300)
+tmap_arrange(pick_co2_13, catfish_co2_06, catfish_co2_18, deans_co2_16,  deans_co2_30, sister_co2_22, ncol = 2, outer.margins = 0.05)
+dev.off()
+```
+
+Figure S10: Moran's I normal site-days
+```{r}
+png(filename = "../4-Figures/moran.png", width = 8, height = 5, units = "in", res = 300)
+ggplot(diff_moran %>% mutate(pval = if_else(p.value > 0.001, if_else(p.value <0.05, paste("p =", as.character(signif(p.value, 2))), ""), "p <0.001"), uniqueid = paste(site, date, gas)), aes(trip, observed))+
+  geom_point() + 
+  scale_x_discrete(labels = c("10:00", "13:00", "16:00", "19:00", "21:00", "01:00", "04:00", "07:00"))+
+  geom_text_repel(aes(label = pval), nudge_y = 0.01, size = 2.3, segment.alpha = 0) +
+  labs(y= "Moran's I")+
+  theme_bw()+
+  theme(axis.title.x = element_blank(), 
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"), 
+        axis.text.y = element_text(hjust = 1, size = 12, color = "black"),
+        axis.title = element_text(size = 16, color = "black")) +
+  facet_wrap(~uniqueid)
+dev.off()
+
+diff_moran %>% mutate(uniqueid = paste(site, date, gas))%>% filter(uniqueid == "Blue Herron 13-14 Sept CO2")
+```
+
+Figure 10a: Morans I for the days when the analyzer had a hole
+```{r}
+png(filename = "../4-Figures/broken-analyzer-moran.png", width = 5, height = 4, units = "in", res = 300)
+ggplot(broken_morans %>% mutate(pval = if_else(p.value > 0.001, if_else(p.value > 0.05, "", paste0("p = ", as.character(signif(p.value, 2)))), "p < 0.001")), aes(trip, observed))+
+  geom_point() + 
+  scale_x_discrete(labels = c("10:00", "13:00", "16:00", "19:00", "21:00", "01:00", "04:00", "07:00", "11:00", "15:00", "20:00", "01:00", "06:00"))+
+  geom_text_repel(aes(label = pval), nudge_y = 0.01, size = 3, segment.alpha = 0) +
+  labs(y= "Moran's I")+
+  #ylim(0, 0.45)+
+  theme_bw()+
+  theme(axis.title.x = element_blank(), 
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"), 
+        axis.text.y = element_text(hjust = 1, size = 12, color = "black"),
+        axis.title = element_text(size = 16, color = "black")) +
+  facet_wrap(~uniqueid, scales = "free_x")
+dev.off()
+```
+
+Figure S11: Heatmap for times without Blue Herron
+```{r}
+png(filename = "../4-Figures/nbh_heatmaps.png", width = 13, height = 9.5, units = "in", res = 300)
+plot_grid(co2_diff_nbh_hm, ch4_diff_nbh_hm, ch4_eb_hm_nbh, co2_eq_diff_nbh_hm, ncol = 2, labels = "AUTO", label_size = 18)
+dev.off()
+```
+
+Figure S12: Heatmap for ebullition and total CO2-eq
+```{r}
+png(filename = "../4-Figures/eb_co2_eq_heatmaps.png", width = 9, height = 11.5, units = "in", res = 300)
+plot_grid(ch4_eb_hm, co2_eq_hm, ncol = 1, labels = "AUTO", label_size = 18)
+dev.off()
+```
+
+
+# Supplement tables
+
+Table S1: Dissolved gas concentrations
+```{r}
+# The dissolved gas samples from Catfish on 9/18/22-9/19/22 were not handled properly, thus those values are excluded from the summaries.
+gc_summarized %>% 
+  filter(mdy(Collection.Date)>mdy("08/15/22"), Collection.Date!="9/19/2022") %>%
+  arrange(Location) %>% 
+  select(Site, Collection.Date, Location, CH4_avg_umol, CH4_sd, CO2_avg_umol, CO2_sd) %>% 
+  mutate(CH4_avg_umol = round(CH4_avg_umol, 3), CH4_sd = round(CH4_sd, 3), CO2_avg_umol = round(CO2_avg_umol,3), CO2_sd = round(CO2_sd, 3))
+```
+
+Table S2: Flux estimates
+```{r}
+all_fluxes_pathways  %>% select(site, date, pathway, gas, flux_mean_g_m2_day:flux_97.5_g_m2_day)  
+```
+
+Table S3: Environmental variables model estimates
+```{r}
+dredge(global.model = co2_all)
+
+r2_nakagawa(co2_sdo)
+summary(co2_sdo)
+
+summary(co2_intercept)
+
+r2_nakagawa(co2_temp)
+summary(co2_temp)
+
+summary(co2_temp_do_top)
+r2_nakagawa(co2_temp_do_top)
+
+summary(co2_do_do)
+r2_nakagawa(co2_do_do)
+
+dredge(global.model = ch4_all)
+summary(ch4_do)
+r2_nakagawa(ch4_do)
+
+summary(ch4_temp)
+r2_nakagawa(ch4_temp)
+
+summary(ch4_int)
+```
+
+```
+
