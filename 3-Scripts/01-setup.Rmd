@@ -7,7 +7,7 @@ output: html_document
 
 # Load packages
 ```{r load packages, include=F}
-my_packages <- c("tidyverse", "mapview", "lubridate", "sf", "data.table", "dygraphs", "xts", "gstat", "stars", "automap", "viridis", "tmap", "gridExtra", "lme4", "AICcmodavg", "ggeffects", "lmerTest", "plotly", "performance", "hms", "cowplot", "MuMIn", "glmmTMB", "ape", "report", "ggrepel", "lmer", "usmap", "scales")
+my_packages <- c("tidyverse", "mapview", "lubridate", "sf", "data.table", "dygraphs", "xts", "gstat", "stars", "automap", "viridis", "tmap", "gridExtra", "lme4", "AICcmodavg", "ggeffects", "lmerTest", "plotly", "performance", "hms", "cowplot", "MuMIn", "glmmTMB", "ape", "report", "ggrepel", "lmer", "usmap", "scales", "merTools")
 lapply(my_packages, require, character.only = TRUE)
 
 source("functions/data_munge_functions.R")

@@ -16,6 +16,8 @@ res_time
 
 ysi_summary %>% pivot_wider(id_cols = sampling, names_from = name, values_from =  c(mean, sd))
 
+ysi_summary %>% filter(sampling == "Blue Herron 13-14 Sept")
+
 ysi_6.20_7.12
 ```
 
@@ -93,6 +95,9 @@ Times P3: Effect of sunny v cloudy conditions
 ```{r sunny v cloudy}
 summary(suncloud.mod.ch4)
 summary(suncloud.mod.co2)
+
+# n
+suncloud %>% filter(is.na(time) == FALSE & is.na(wolffia)==FALSE & is.na(sampling)==FALSE & is.na(flux_co2_g_hr)==FALSE) %>% nrow()
 ```
 
 Locations P1: Spatial pattern of ebullition 
@@ -111,14 +116,15 @@ diff_moran %>% filter(site == "Blue Herron", p.value < 0.05, gas == "CO2") %>% a
 
 Simulations P1: Consequences of limited sampling locations
 ```{r}
-space_sims_combos %>% mutate(perc = 100* (co2_eq_diff/calc_co2_eq) ) %>% summarize(range = range(co2_eq_diff), range_perc = range(perc))
+space_sims_combos %>% mutate(perc = 100* (co2_eq_diff/calc_co2_eq) ) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
 ```
 
 
 Simulations P2: Consequences of limited sampling
 ```{r}
 # how wrong are you sampling one times 
-time_combos %>% filter(ord1 == ord2) %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
+time_combos %>% filter(ord1 == ord2) %>% mutate(perc = 100*(co2_eq_diff/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
+
 
 # times that minimize cumulative CO2 diffusion estimation error for sites other than Blue Herron
 time_combos %>% filter(site != "Blue Herron") %>% mutate(co2_diffusion_difference_abs = abs(co2_diffusion_difference)) %>% group_by(ord1, ord2) %>% summarize(misestimate_sum = sum(co2_diffusion_difference_abs)) %>% arrange(misestimate_sum) %>% mutate(time = if_else((ord1 %in% c(1:3) & ord2 %in% c(4:7)), "day_night", "not"))
@@ -167,10 +173,7 @@ co2_eq_summary %>% select(site, date, ebullition_CH4, without_eb) %>% arrange(wi
 time_combos %>% filter(ord1 == ord2) %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
 
 # how wrong are you by sampling one to four locations
-space_sims_combos  %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq)) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
-
-space_sims_combos  %>% mutate(perc = 1 - (sim_co2_eq/calc_co2_eq))
-head(space_sims_combos)
+space_sims_combos %>% mutate(perc = 100* (co2_eq_diff/calc_co2_eq) ) %>% summarize(min = min(co2_eq_diff), max = max(co2_eq_diff), min_perc = min(perc), max_perc = max(perc))
 ```
 
 P1: Wolffia reservoir vs other reservoirs
@@ -217,7 +220,7 @@ clarke_area * 1e6 * not_green_avg * 1e-3
 
 Figure 1: Summary of contribution of different pathways to total CO2-eq flux
 ```{r pathways summary fig, echo = F}
-png(filename = "../4-Figures/co2-eq-summary.png", width = 8, height = 5, units = "in", res = 300)
+tiff(filename = "../4-Figures/co2-eq-summary.tiff", width = 7.5, height = 5, units = "in", res = 1200)
 all_fluxes_pathways %>% 
   mutate(flux_mean_g_m2_day_co2_eq =  flux_mean_g_day_co2_eq/area,
          flux_2.5_g_m2_day_co2_eq= flux_2.5_g_day_co2_eq/area, 
@@ -228,10 +231,10 @@ all_fluxes_pathways %>%
   geom_bar(position = position_dodge(), stat = "identity")+
   scale_x_discrete(labels = c("Catfish 09/06/22" = "Catfish 06 Sept", "Catfish 09/18/22" = "Catfish 18 Sept", "Deans 08/16/22" = "Deans 16 Aug", "Deans 08/30/22" = "Deans 30 Aug", "Pick 09/13/22" = "Blue Herron 13 Sept", "Sister3 08/22/22" = "Sister 22 Aug"))+
   geom_errorbar(aes(ymax=flux_97.5_g_m2_day_co2_eq, ymin=flux_2.5_g_m2_day_co2_eq), position = position_dodge())+
-  scale_fill_manual(values = c("#BFDBC0","#94A7C5", "#3D5170"), labels = c(expression(diffusion~CO[2]), expression(diffusion~CH[4]), expression(ebullition~CH[4])))+
-  ylab(expression(CO[2]-equivalent ~ flux ~ (g~m^-2~day^-1)))+
+  scale_fill_manual(values = c("#BFDBC0","#94A7C5", "#3D5170"), labels = c(expression(CO[2]~diffusion), expression(CH[4]~diffusion), expression(CH[4]~ebullition)))+
+  ylab(expression(CO[2-eq]~ flux~(g~m^-2~d^-1)))+
   theme_bw()+
-  theme(legend.text.align = 0, axis.title.x = element_blank(), legend.title = element_blank(), axis.text.x = element_text(angle=45, hjust=1), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), legend.text = element_text(size = 14))
+  theme(legend.text.align = 0, axis.title.x = element_blank(), legend.title = element_blank(), axis.text.x = element_text(angle=45, hjust=1), axis.text = element_text(size = 12, color = "black"), axis.title = element_text(size = 14, color = "black"), legend.text = element_text(size = 12))
 dev.off()
 ```
 
@@ -240,19 +243,27 @@ Figure 2: Diel patterns of emissions
 png(filename = "../4-Figures/diel-patterns.png", width = 7.5, height = 11.5, units = "in", res = 300)
 plot_grid(co2_diel, ch4_diel, eb_diel, ncol = 1, labels = "AUTO", label_size = 18, vjust = 1.3)
 dev.off()
+
+tiff(filename = "../4-Figures/diel-patterns_co2_eq.tiff", width = 8, height = 15, units = "in", res = 1200)
+plot_grid(co2_diel + geom_hline(yintercept = 0, color = "red", linetype = "dashed"), ch4_diel+ geom_hline(yintercept = 0, color = "red", linetype = "dashed"), eb_diel+ geom_hline(yintercept = 0, color = "red", linetype = "dashed"), co2_eq_diel+ geom_hline(yintercept = 0, color = "red", linetype = "dashed"), ncol = 1, labels = "AUTO", label_size = 18, vjust = 1.3, align = "v")
+dev.off()
+
+png(filename = "../4-Figures/diel-patterns_co2_eq_free.png", width = 9, height = 15, units = "in", res = 600)
+plot_grid(co2_diel_free + geom_hline(yintercept = 0, color = "red", linetype = "dashed"), ch4_diel_free + geom_hline(yintercept = 0, color = "red", linetype = "dashed"), eb_diel_free + geom_hline(yintercept = 0, color = "red", linetype = "dashed"), co2_eq_diel_free + geom_hline(yintercept = 0, color = "red", linetype = "dashed"), ncol = 1, labels = "AUTO", label_size = 18, vjust = 1.3, align = "v")
+dev.off()
 ```
 
 Figure 3: Iterative site number consequences
 ```{r fig 3}
-png(filename = "../4-Figures/interate_space.png", width = 8, height = 12, units = "in", res = 300)
+tiff(filename = "../4-Figures/interate_space.tiff", width = 8, height = 12, units = "in", res = 1200)
 plot_grid(iterate_space, iterate_space_legend, ncol = 2, rel_widths = c(0.7, 0.3))
 dev.off()
 ```
 
 Figure 4: Heat map different sampling times
 ```{r fig 4}
-png(filename = "../4-Figures/diffusion_heatmaps.png", width = 9, height = 11.5, units = "in", res = 300)
-plot_grid(co2_diff_hm, ch4_diff_hm, ncol = 1, labels = "AUTO", label_size = 18)
+tiff(filename = "../4-Figures/diffusion_heatmaps.tiff", width = 17.5, height = 11.5, units = "in", res = 1200)
+plot_grid(co2_diff_hm, ch4_diff_hm, ch4_eb_hm, co2_eq_hm, labels = "AUTO", label_size = 20)
 dev.off()
 ```
 
@@ -357,6 +368,15 @@ Figure S9: Raw values map CO2
 png("../4-Figures/point_maps_co2.png", width = 12, height = 15, units = "in", res = 300)
 tmap_arrange(pick_co2_13, catfish_co2_06, catfish_co2_18, deans_co2_16,  deans_co2_30, sister_co2_22, ncol = 2, outer.margins = 0.05)
 dev.off()
+
+
+png("../4-Figures/point_maps_ch4.png", width = 12, height = 15, units = "in", res = 300)
+tmap_arrange(pick_ch4_13, catfish_ch4_06, catfish_ch4_18, deans_ch4_16,  deans_ch4_30, sister_ch4_22, ncol = 2, outer.margins = 0.05)
+dev.off()
+
+png("../4-Figures/point_maps_eb.png", width = 12, height = 15, units = "in", res = 300)
+tmap_arrange(pick_eb_13, catfish_eb_06, catfish_eb_18, deans_eb_16,  deans_eb_30, sister_eb_22, ncol = 2, outer.margins = 0.05)
+dev.off()
 ```
 
 Figure S10: Moran's I normal site-days
@@ -425,7 +445,11 @@ gc_summarized %>%
 
 Table S2: Flux estimates
 ```{r}
-all_fluxes_pathways  %>% select(site, date, pathway, gas, flux_mean_g_m2_day:flux_97.5_g_m2_day)  
+table_s2 <- all_fluxes_pathways  %>% select(site, date, pathway, gas, co2_eq_conv, flux_mean_g_m2_day:flux_97.5_g_m2_day)  
+
+table_s2
+
+table_s2 %>% mutate(mean_co2_eq = flux_mean_g_m2_day * co2_eq_conv, lower_co2_eq = flux_2.5_g_m2_day * co2_eq_conv, upper_co2_eq = flux_97.5_g_m2_day * co2_eq_conv) %>% group_by(site, date) %>% summarize(mean_co2_eq_sum = sum(mean_co2_eq), lower_co2_eq_sum = sum(lower_co2_eq), upper_co2_eq_sum = sum(upper_co2_eq))
 ```
 
 Table S3: Environmental variables model estimates
@@ -456,5 +480,53 @@ r2_nakagawa(ch4_temp)
 summary(ch4_int)
 ```
 
+NEON gas sampling times
+```{r neon mode, include = F}
+# library(neonUtilities)
+# 
+# token <- "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJhdWQiOiJodHRwczovL2RhdGEubmVvbnNjaWVuY2Uub3JnL2FwaS92MC8iLCJzdWIiOiJsYXVyYW5hc2x1bmRAZ21haWwuY29tIiwic2NvcGUiOiJyYXRlOnB1YmxpYyIsImlzcyI6Imh0dHBzOi8vZGF0YS5uZW9uc2NpZW5jZS5vcmcvIiwiZXhwIjoxODM5NDI5MTM2LCJpYXQiOjE2ODE3NDkxMzYsImVtYWlsIjoibGF1cmFuYXNsdW5kQGdtYWlsLmNvbSJ9.4QnGrN0icYdVuyalW2aIUDBF9lsAewbk40M34c6DxXgMzV9xSzlMIN82ZncrC49Bm-34hWUi1S-KtWfkCnPXTA"
+# 
+# neon_util <- loadByProduct(dpID="DP1.20097.001",
+#                                     site=c("CRAM", "BARC", "SUGG", "LIRO", "PRLA", "TOOK"),
+#                                     startdate="2016-01", enddate="2023-04",
+#                                     package="basic",
+#                             token = token)
+# 
+#  list2env(neon_util, .GlobalEnv)
+# 
+#  temp <- sdg_fieldData %>% mutate(date_time = case_when(
+#    siteID == "CRAM" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#    siteID == "BARC" ~ with_tz(collectDate, "America/New_York") %>% force_tz(),
+#    siteID == "SUGG" ~ with_tz(collectDate, "America/New_York") %>% force_tz(),
+#    siteID == "LIRO" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#    siteID == "PRLA" ~ with_tz(collectDate, "America/Chicago") %>% force_tz(),
+#    siteID == "TOOK" ~ with_tz(collectDate, "America/Anchorage")%>% force_tz()
+#  )) %>% mutate(time = paste(Sys.Date(), format(date_time, format="%H:%M:%S"), sep = " ") %>% ymd_hms())
+# 
+# write.csv(temp, "../2-Clean Data/NEON-gas-times.csv")
+
+neon <- read.csv("../2-Clean Data/NEON-gas-times.csv") %>% mutate(time = ymd_hms(time), time_num = time %>% as.numeric())
+
+ ggplot(neon, aes(time_num))+geom_histogram()
+
+ class(neon$time)
+
+ range(neon$mins)
+
+ which.max(density(neon$time_num)$y)
+ density(neon$time_num)$x[232]
+
+ as_datetime(1681727985)
+
+ 
+ggplot(neon %>% mutate(dt = as_datetime(time_num)), aes(dt))+geom_histogram() + scale_x_datetime(labels = date_format("%H:%M"))
+
+ 
+ # CRAM "America/Chicago"
+# BARC "America/New_York"
+# SUGG "America/New_York"
+# LIRO "America/Chicago"
+# PRLA "America/Chicago"
+# TOOK "America/Anchorage"
 ```
 

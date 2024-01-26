@@ -335,7 +335,8 @@ time_combos <- read.csv("../5-Results/time_sims_combos.csv") %>% mutate(site = c
   TRUE ~ site
 ))
 
-heatmaps <- function(df, var, limit, gas) {
+
+heatmaps_2 <- function(df, var, limit, gas) {
   col <- enquo(var)
   
   q <- ggplot(df, aes(ord1, ord2, fill = (!!col)))+
@@ -344,42 +345,67 @@ heatmaps <- function(df, var, limit, gas) {
     scale_x_discrete(limits = factor(c(1,2,3,4,5,6,7,8)),labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00")) + 
     scale_y_discrete(limits = factor(c(1,2,3,4,5,6,7,8)),labels = c("10:00", "13:00", "16:00", "19:00", "22:00", "01:00", "04:00", "07:00")) + 
     theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.title = element_blank())
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 12), axis.text.y = element_text(size = 12), axis.title = element_blank(), strip.text.x = element_text(size = 16), legend.title=element_text(size=16), legend.text=element_text(size=14))
   
   if(gas == "CH4") {
-   return(q + scale_fill_distiller(name = expression(atop(estimation ~ error, (g~CH[4]~m^-2~day^-1))), palette = "RdBu", limit = limit)) 
+   name_val = expression(atop(estimation ~ error, (g~CH[4]~m^-2~day^-1)))
   }
   
   if(gas == "CO2-eq"){
-   return(q + scale_fill_distiller(name = expression(atop(estimation ~ error, (g~CO[2]-eq~m^-2~day^-1))), palette = "RdBu", limit = limit))
+   name_val = expression(atop(estimation ~ error, (g~CO[2]-eq~m^-2~day^-1)))
   }
   
-  else{
-     return(q + scale_fill_distiller(name = expression(atop(estimation ~ error, (g~CO[2]~m^-2~day^-1))), palette = "RdBu", limit = limit))
+  if(gas == "CO2"){
+     name_val = expression(atop(estimation ~ error, (g~CO[2]~m^-2~day^-1)))
   }
-  }
+  
+# scale_fill_gradientn(colours = c("#6206B6", "#34DCDC", "#FFFFFF","#E1B22F", "#BA2C31")
+  
+  return(q + 
+  scale_fill_gradientn(colours = c("#2C3E78", "#6B9AC4", "#FFFFFF","#F4B942", "#A44A00"), 
+  values = rescale(limit, to = c(0,1)),
+  space = "Lab",
+  na.value = "grey50",
+  guide = "colourbar",
+  aesthetics = "fill", 
+  limits = c(min(limit), max(limit)), 
+  breaks = breaks_extended(6), 
+  name = name_val))
+}
 
-limit_eb <- max(abs(time_combos$ch4_ebullition_difference)) * c(-1, 1)
-ch4_eb_hm <- heatmaps(time_combos, ch4_ebullition_difference, limit_eb, "CH4")
-
-limit_eb_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(ch4_ebullition_difference))) * c(-1, 1)
-ch4_eb_hm_nbh <- heatmaps(time_combos %>% filter(site != "Blue Herron"), ch4_ebullition_difference, limit_eb_nbh, "CH4")
-
-limit_ch4diff <- max(abs(time_combos$ch4_diffusion_difference)) * c(-1, 1)
-ch4_diff_hm <- heatmaps(time_combos, ch4_diffusion_difference, limit_ch4diff, "CH4")
-
-limit_ch4diff_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(ch4_diffusion_difference))) * c(-1, 1)
-ch4_diff_nbh_hm <- heatmaps(time_combos %>% filter(site != "Blue Herron"), ch4_diffusion_difference, limit_ch4diff_nbh, "CH4")
-
-limit_co2diff <- max(abs(time_combos$co2_diffusion_difference)) * c(-1, 1)
-co2_diff_hm <- heatmaps(time_combos, co2_diffusion_difference, limit_co2diff, "CO2")
-
+# CO2 diffusion 
+limit_co2diff_bh <- max(abs(time_combos$co2_diffusion_difference)) * c(-1, 1)
 limit_co2diff_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(co2_diffusion_difference))) * c(-1, 1)
-co2_diff_nbh_hm <- heatmaps(time_combos %>% filter(site != "Blue Herron"), co2_diffusion_difference, limit_co2diff_nbh, "CO2")
+limit_co2diff <- c(limit_co2diff_bh, limit_co2diff_nbh, 0) %>% sort()
 
-limit_co2eq <- max(abs(time_combos$co2_eq_diff)) * c(-1, 1)
-co2_eq_hm <- heatmaps(time_combos, co2_eq_diff, limit_co2eq, "CO2-eq")
+co2_diff_hm <- heatmaps_2(time_combos, co2_diffusion_difference, limit_co2diff, "CO2")
 
+
+# CH4 diffusion 
+limit_ch4diff_bh <- max(abs(time_combos$ch4_diffusion_difference)) * c(-1, 1)
+limit_ch4diff_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(ch4_diffusion_difference))) * c(-1, 1)
+limit_ch4diff <- c(limit_ch4diff_bh, limit_ch4diff_nbh, 0) %>% sort()
+
+ch4_diff_hm <- heatmaps_2(time_combos, ch4_diffusion_difference, limit_ch4diff, "CH4")
+ch4_diff_hm
+
+# CH4 ebullition
+limit_eb_bh <- max(abs(time_combos$ch4_ebullition_difference)) * c(-1, 1)
+limit_eb_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(ch4_ebullition_difference))) * c(-1, 1)
+limit_eb <- c(limit_eb_bh, limit_eb_nbh, 0) %>% sort()
+
+ch4_eb_hm <- heatmaps_2(time_combos, ch4_ebullition_difference, limit_eb, "CH4")
+ch4_eb_hm
+
+# CO2 eq emissions 
+limit_co2eq_bh <- max(abs(time_combos$co2_eq_diff)) * c(-1, 1)
 limit_co2eq_nbh <- max(abs(time_combos %>% filter(site != "Blue Herron") %>% pull(co2_eq_diff))) * c(-1, 1)
-co2_eq_diff_nbh_hm <- heatmaps(time_combos %>% filter(site != "Blue Herron"), co2_eq_diff, limit_co2eq_nbh, "CO2-eq")
+limit_co2eq <- c(limit_co2eq_bh, limit_co2eq_nbh, 0) %>% sort()
+
+co2_eq_hm <- heatmaps_2(time_combos, co2_eq_diff, limit_co2eq, "CO2-eq")
+
+names(time_combos)
+
+time_combos %>% filter(ord1 == ord2) %>%  group_by(ord1, ord2) %>% summarize(all_co2_eq = sum(abs(co2_eq_diff))) %>% arrange(all_co2_eq)
 ```
+

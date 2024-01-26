@@ -1,7 +1,7 @@
 # Analyses of patterns of diel diffusive emissions
 
 ```{r diel setup, include=FALSE}
-par <- site_rename(read.csv("../2-Clean Data/par.csv") %>% mutate(Date_Time = mdy_hm(time_et, tz = "America/New_York")) %>% select(Date_Time, site, cal_corr) %>% rename("par" = "cal_corr"))
+par <- site_rename(read.csv("../2-Clean Data/par.csv") %>% mutate(Date_Time = mdy_hm(time_et, tz = "America/New_York")) %>% dplyr::select(Date_Time, site, cal_corr) %>% rename("par" = "cal_corr"))
 ws <- site_rename(date_to_sampling(read.csv("../2-Clean Data/windspeeds.csv") %>% mutate(date = ymd(date))))
 lux <- sampling_filter_24hr(site_rename(read.csv("../2-Clean Data/lux.csv") %>% mutate(Date_Time = ymd_hms(Date_Time, tz = "America/New_York")) %>% distinct()))
 
@@ -9,7 +9,7 @@ time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
 
 diffusion_env <- site_rename(diffusion) %>% 
   left_join(lux, time_join)%>% 
-  select(site, location, start_time, trip, flux_ch4_g_hr, flux_co2_g_hr, Lux) 
+  dplyr::select(site, location, start_time, trip, flux_ch4_g_hr, flux_co2_g_hr, Lux) 
 
 time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
 
@@ -23,7 +23,8 @@ diffusion_env <- diffusion_env %>%
     sampling == "Deans 8/30 - 8/31"  ~ "Deans 30-31 Aug",
     sampling == "Blue Herron 9/13 - 9/14"  ~ "Blue Herron 13-14 Sept",
     sampling == "Sister 8/22 - 8/23" ~ "Sister 22-23 Aug"
-  )) %>% select(-date, -site), by = c("sampling", "location", "trip")) %>% 
+  )) %>% 
+    dplyr::select(-date, -site), by = c("sampling", "location", "trip")) %>% 
 drop_na()
   
 time_join <- join_by(site, closest(x$start_time >= y$Date_Time))
@@ -101,7 +102,7 @@ ysi <- read.csv("../2-Clean Data/ysi_all.csv") %>% mutate(sampling = case_when(
   mutate(do = as.numeric(value), time = format(ymd_hms(date_time), format = "%H:%M") %>% as.POSIXct(format = "%H:%M"), time_alt = if_else(hour(time) %in% c(24, 0:9), time + days(1), time)) %>% 
   mutate(do = replace(do, X == 2371, 4.59), do = replace(do, X==2707, 5.91), do = replace(do, X == 1832, NA), do = replace(do, X==852, 5.86)) 
 
-diffusion_env <- diffusion_env %>%  left_join(ysi %>% filter(name == "YSI Bottom DO mg/L" | name == "YSI Top DO mg/L") %>% select(sampling, location, trip, name, do) %>%  pivot_wider(id_cols = c(sampling, location, trip), names_from = name, values_from = do) %>% group_by(sampling, trip) %>% summarize(mean_top_do = mean(`YSI Top DO mg/L`, na.rm = T), mean_bottom_do = mean(`YSI Bottom DO mg/L`, na.rm = T)) , by = c("sampling", "trip")) %>% mutate(start_date = case_when(
+diffusion_env <- diffusion_env %>%  left_join(ysi %>% filter(name == "YSI Bottom DO mg/L" | name == "YSI Top DO mg/L") %>% dplyr::select(sampling, location, trip, name, do) %>%  pivot_wider(id_cols = c(sampling, location, trip), names_from = name, values_from = do) %>% group_by(sampling, trip) %>% summarize(mean_top_do = mean(`YSI Top DO mg/L`, na.rm = T), mean_bottom_do = mean(`YSI Bottom DO mg/L`, na.rm = T)) , by = c("sampling", "trip")) %>% mutate(start_date = case_when(
   sampling == "Catfish 06-07 Sept" ~ ymd("2022-09-06"),
   sampling == "Catfish 18-19 Sept" ~ ymd("2022-09-18"),
   sampling == "Deans 16-17 Aug" ~ ymd("2022-08-16"),
@@ -120,23 +121,34 @@ ysi_6.20_7.12 <- read.csv("../2-Clean Data/ysi_620.712.csv")
 
 
 ## CH4 models
-```{r model selection }
+```{r ch4 model selection}
 ch4_all <- lmer(flux_ch4_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + (1|sampling), data = diffusion_env, na.action = "na.fail")
 
 ch4_int <- lmer(flux_ch4_g_hr ~ (1|sampling), data = diffusion_env, na.action = "na.fail")
 ch4_do <- lmer(flux_ch4_g_hr ~ mean_top_do + (1|sampling), data = diffusion_env, na.action = "na.fail")
 ch4_temp <- lmer(flux_ch4_g_hr ~ temp + (1|sampling), data = diffusion_env, na.action = "na.fail")
+
+summary(ch4_do)
 ```
 
 With PAR
-```{r}
+```{r ch4 model par}
 diffusion_env_par <- diffusion_env %>% filter(is.na(par)==F)
 ch4_all_par <- lmer(flux_ch4_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + scale(par) + (1|sampling), data = diffusion_env_par, na.action = "na.fail")
 
+# adding random effect for slope, as recommended by the reviewer, induces convergence errors
+ch4_all_par_slope <- lmer(flux_ch4_g_hr ~ scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + scale(par) + (1 + scale(mean_top_do) + scale(mean_bottom_do) + scale(temp) + scale(Lux) + scale(ws_mean) + scale(par) |sampling), data = diffusion_env_par, na.action = "na.fail")
+
 dredge(ch4_all_par)
+
+summary(lmer(flux_ch4_g_hr ~ scale(mean_top_do) + (1 + scale(mean_top_do) | sampling), data = diffusion_env_par, na.action = "na.fail"))
+summary(lmer(flux_ch4_g_hr ~ scale(temp) + (1 + scale(temp) | sampling), data = diffusion_env_par, na.action = "na.fail"))
+
+
 ch4_par <- lmer(flux_ch4_g_hr ~ par + (1|sampling), data = diffusion_env_par, na.action = "na.fail")
 summary(ch4_par)
 ```
+
 
 ## CO2 models
 ### Multiple predictors
@@ -148,12 +160,19 @@ co2_sdo <- lmer(flux_co2_g_hr ~ mean_top_do + (1|sampling), data = diffusion_env
 r2_nakagawa(co2_sdo)
 summary(co2_sdo)
 
+summary(lmer(flux_co2_g_hr ~ scale(mean_top_do) + (1 + scale(mean_top_do)|sampling), data = diffusion_env, na.action = "na.fail"))
+
 co2_intercept <- lmer(flux_co2_g_hr ~ (1|sampling), data = diffusion_env, na.action = "na.fail")
 summary(co2_intercept)
 
 co2_temp <- lmer(flux_co2_g_hr ~ temp + (1|sampling), data = diffusion_env, na.action = "na.fail")
 r2_nakagawa(co2_temp)
 summary(co2_temp)
+
+# adding random effect for slope, as recommended by the reviewer, induces convergence errors
+summary(lmer(flux_co2_g_hr ~ scale(temp) + (1 + scale(temp)|sampling), data = diffusion_env, na.action = "na.fail"))
+summary(lmer(flux_co2_g_hr ~ scale(temp) + scale(mean_top_do)+ (1 + scale(temp) + scale(mean_top_do)|sampling), data = diffusion_env, na.action = "na.fail"))
+summary(lmer(flux_co2_g_hr ~ scale(mean_bottom_do) + scale(mean_top_do)+ (1 + scale(mean_bottom_do) + scale(mean_top_do)|sampling), data = diffusion_env, na.action = "na.fail"))
 
 co2_temp_nbh <- lmer(flux_co2_g_hr ~ temp + (1|sampling), data = diffusion_env %>% filter(site != "Blue Herron"), na.action = "na.fail")
 r2_nakagawa(co2_temp_nbh)
@@ -168,49 +187,71 @@ summary(co2_do_do)
 r2_nakagawa(co2_do_do)
 ```
 
-
-
-```{r env mod figs}
+```{r ch4 do mod fig}
 pred.ch4.do <- ggpredict(ch4_do, terms =c("mean_top_do", "sampling"), type = "random") 
 
-facet.lab <- c("Blue Herron\n13-14 Sept", "Catfish\n06-07 Sept", "Catfish\n18-19 Sept", "Deans\n16-17 Aug","Deans\n30-31 Aug", "Sister\n22-23 Aug")
-names(facet.lab) <- c("Blue Herron 13-14 Sept", "Catfish 06-07 Sept", "Catfish 18-19 Sept", "Deans 16-17 Aug","Deans 30-31 Aug", "Sister 22-23 Aug")
+ch4.do_df <- data.frame(mean_top_do = rep(seq(0, 8, by = 1), 6), sampling = rep(unique(diffusion_env$sampling), each = length(rep(seq(0, 8, by = 1)))))
 
-ch4_diff_do <- ggplot(pred.ch4.do) + 
-  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
-  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_ch4_g_hr, group = group))+ 
-  geom_line(aes(x=x, y=predicted))+
-  facet_grid(~group, labeller = labeller(group = facet.lab))+
+ch4_do_out <- predictInterval(ch4_do, ch4.do_df, n.sims = 10000, level = 0.95) %>% as.data.frame()
+
+ch4_do_out$sampling <- ch4.do_df$sampling
+ch4_do_out$do <- ch4.do_df$mean_top_do
+
+ch4_diff_do <- ggplot() + 
+  geom_line(data = ch4_do_out, aes(x = do, y = lwr, color = sampling), linetype = "dashed")+
+  geom_line(data = ch4_do_out, aes(x = do, y = upr, color = sampling), linetype = "dashed")+
+  geom_line(data = ch4_do_out, aes(x = do, y = fit, color = sampling))+
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_ch4_g_hr, color = group))+ 
+  scale_color_manual(values = c("#6A3D9A", "#A6CEE3", "#2078B4", "#B2DF8A", "#33A02B","#FF7F03"))+
   ylab(expression(Diffusive ~ CH[4]~ flux ~ (g~m^-2~hr^-1)))+
   xlab("Dissolved Oxygen (mg/L)")+
   theme_bw()+ 
-  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
+  theme(legend.title = element_blank(), legend.text = element_text(size = 12), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
 
-pred.co2.temp <- ggpredict(co2_temp, terms =c("temp", "sampling"), type = "random") 
+ch4_diff_do
+```
 
-co2_diff_temp <- ggplot(pred.co2.temp) + 
-  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
-  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(temp, flux_co2_g_hr, group = group))+ 
-  geom_line(aes(x=x, y=predicted))+
-  facet_grid(~group, labeller = labeller(group = facet.lab))+
+```{r co2 temp mod fig}
+co2.temp_df <- data.frame(temp = rep(seq(20, 30, by = 1), 6), sampling = rep(unique(diffusion_env$sampling), each = length(rep(seq(20, 30, by = 1)))))
+
+co2_temp_out <- predictInterval(co2_temp, co2.temp_df, n.sims = 10000, level = 0.95) %>% as.data.frame()
+
+co2_temp_out$sampling <- co2.temp_df$sampling
+co2_temp_out$temp <- co2.temp_df$temp
+
+co2_diff_temp <- ggplot() + 
+  geom_line(data = co2_temp_out, aes(x = temp, y = lwr, color = sampling), linetype = "dashed")+
+  geom_line(data = co2_temp_out, aes(x = temp, y = upr, color = sampling), linetype = "dashed")+
+  geom_line(data = co2_temp_out, aes(x = temp, y = fit, color = sampling))+
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(temp, flux_co2_g_hr, color = group))+ 
+  scale_color_manual(values = c("#6A3D9A", "#A6CEE3", "#2078B4", "#B2DF8A", "#33A02B","#FF7F03"))+
   ylab(expression(Diffusive ~ CO[2]~ flux ~ (g~m^-2~hr^-1)))+
-  scale_x_continuous(breaks = c(20,24,28))+
   xlab("Temperature (°C)")+
   theme_bw()+ 
-  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
+  theme(legend.title = element_blank(), legend.text = element_text(size = 12), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
 
+co2_diff_temp
+```
+
+```{r co2 do mod fig}
 pred.co2.do <- ggpredict(co2_sdo, terms =c("mean_top_do", "sampling"), type = "random") 
 
-co2_diff_do <- ggplot(pred.co2.do) + 
-  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2)+ 
-  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_co2_g_hr, group = group))+ 
-  geom_line(aes(x=x, y=predicted))+
-  facet_grid(~group, labeller = labeller(group = facet.lab))+
+co2.df_do <- data.frame(mean_top_do = rep(seq(0, 8, by = 1), 6), sampling = rep(unique(diffusion_env$sampling), each = length(rep(seq(0, 8, by = 1)))))
+
+co2_do_out <- predictInterval(co2_sdo, co2.df_do, n.sims = 10000, level = 0.95) %>% as.data.frame()
+
+co2_do_out$sampling <- co2.df_do$sampling
+co2_do_out$do <- co2.df_do$mean_top_do
+
+co2_diff_do <- ggplot() + 
+  geom_line(data = co2_do_out, aes(x = do, y = lwr, color = sampling), linetype = "dashed")+
+  geom_line(data = co2_do_out, aes(x = do, y = upr, color = sampling), linetype = "dashed")+
+  geom_line(data = co2_do_out, aes(x = do, y = fit, color = sampling))+
+  geom_point(data = diffusion_env %>% rename("group" = "sampling"), aes(mean_top_do, flux_co2_g_hr, color = group))+ 
+  scale_color_manual(values = c("#6A3D9A", "#A6CEE3", "#2078B4", "#B2DF8A", "#33A02B","#FF7F03"))+
   ylab(expression(Diffusive ~ CO[2]~ flux ~ (g~m^-2~hr^-1)))+
   xlab("Dissolved Oxygen (mg/L)")+
   theme_bw()+ 
-  theme(legend.title = element_blank(), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
-
+  theme(legend.title = element_blank(), legend.text = element_text(size = 12), axis.text = element_text(size = 14, color = "black"), axis.title = element_text(size = 16, color = "black"), strip.text = element_text(size = 14,  color = "black"))
 ```
-
 
